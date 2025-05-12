@@ -8,6 +8,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "defs.h"
 
@@ -31,13 +32,13 @@ block_list_t BLOCKS;
 macro_t *MACROS;
 int macros_idx = 0;
 
-/* FUNCS_MAP is used to integrate function storing and boost lookup
+/* FUNC_MAP is used to integrate function storing and boost lookup
  * performance, currently it uses FNV-1a hash function to hash function
- * name. The bucket size defaults to MAX_FUNCS. Ideally, it should be a small
- * number, but due to lack of rehashing implementation, to prevent collision,
- * we have to initially create large amount of buckets.
+ * name.
  */
-hashmap_t *FUNCS_MAP;
+hashmap_t *FUNC_MAP;
+hashmap_t *ALIASES_MAP;
+hashmap_t *CONSTANTS_MAP;
 
 type_t *TYPES;
 int types_idx = 0;
@@ -56,21 +57,12 @@ arena_t *BB_ARENA;
 ph2_ir_t **PH2_IR_FLATTEN;
 int ph2_ir_idx = 0;
 
-label_lut_t *LABEL_LUT;
-int label_lut_idx = 0;
-
 func_list_t FUNC_LIST;
-func_t GLOBAL_FUNC;
+func_t *GLOBAL_FUNC;
 basic_block_t *MAIN_BB;
 int elf_offset = 0;
 
 regfile_t REGS[REG_CNT];
-
-alias_t *ALIASES;
-int aliases_idx = 0;
-
-constant_t *CONSTANTS;
-int constants_idx = 0;
 
 source_t *SOURCE;
 
@@ -92,7 +84,7 @@ char *elf_strtab;
 char *elf_section;
 
 /**
- * arena_block_create() - creates a new arena block with given capacity.
+ * arena_block_create() - Creates a new arena block with given capacity.
  * The created arena block is guaranteed to be zero-initialized.
  * @capacity: The capacity of the arena block. Must be positive.
  *
@@ -122,7 +114,7 @@ arena_block_t *arena_block_create(int capacity)
 }
 
 /**
- * arena_init() - initializes the given arena with initial capacity.
+ * arena_init() - Initializes the given arena with initial capacity.
  * @initial_capacity: The initial capacity of the arena. Must be positive.
  *
  * Return: The pointer of initialized arena.
@@ -135,7 +127,7 @@ arena_t *arena_init(int initial_capacity)
 }
 
 /**
- * arena_alloc() - allocates memory from the given arena with given size.
+ * arena_alloc() - Allocates memory from the given arena with given size.
  * The arena may create a new arena block if no space is available.
  * @arena: The arena to allocate memory from. Must not be NULL.
  * @size: The size of memory to allocate. Must be positive.
@@ -175,7 +167,7 @@ void *arena_alloc(arena_t *arena, int size)
 }
 
 /**
- * arena_reset() - resets the given arena by resetting all blocks' offset to 0.
+ * arena_reset() - Resets the given arena by resetting all blocks' offset to 0.
  * @arena: The arena to reset. Must not be NULL.
  */
 void arena_reset(arena_t *arena)
@@ -189,7 +181,7 @@ void arena_reset(arena_t *arena)
 }
 
 /**
- * arena_free() - frees the given arena and all its blocks.
+ * arena_free() - Frees the given arena and all its blocks.
  * @arena: The arena to free. Must not be NULL.
  */
 void arena_free(arena_t *arena)
@@ -207,7 +199,7 @@ void arena_free(arena_t *arena)
 }
 
 /**
- * hashmap_hash_index() - hashses a string with FNV-1a hash function
+ * hashmap_hash_index() - Hashses a string with FNV-1a hash function
  * and converts into usable hashmap index. The range of returned
  * hashmap index is ranged from "(0 ~ 2,147,483,647) mod size" due to
  * lack of unsigned integer implementation.
@@ -242,7 +234,7 @@ int round_up_pow2(int v)
 }
 
 /**
- * hashmap_create() - creates a hashmap on heap. Notice that
+ * hashmap_create() - Creates a hashmap on heap. Notice that
  * provided size will always be rounded up to nearest power of 2.
  * @size: The initial bucket size of hashmap. Must not be 0 or
  * negative.
@@ -272,7 +264,7 @@ hashmap_t *hashmap_create(int cap)
 }
 
 /**
- * hashmap_node_new() - creates a hashmap node on heap.
+ * hashmap_node_new() - Creates a hashmap node on heap.
  * @key: The key of node. Must not be NULL.
  * @val: The value of node. Could be NULL.
  *
@@ -348,7 +340,7 @@ void hashmap_rehash(hashmap_t *map)
 }
 
 /**
- * hashmap_put() - puts a key-value pair into given hashmap.
+ * hashmap_put() - Puts a key-value pair into given hashmap.
  * If key already contains a value, then replace it with new
  * value, the old value will be freed.
  * @map: The hashmap to be put into. Must not be NULL.
@@ -380,7 +372,7 @@ void hashmap_put(hashmap_t *map, char *key, void *val)
 }
 
 /**
- * hashmap_get_node() - gets key-value pair node from hashmap from given key.
+ * hashmap_get_node() - Gets key-value pair node from hashmap from given key.
  * @map: The hashmap to be looked up. Must no be NULL.
  * @key: The key string. May be NULL.
  *
@@ -402,7 +394,7 @@ hashmap_node_t *hashmap_get_node(hashmap_t *map, char *key)
 }
 
 /**
- * hashmap_get() - gets value from hashmap from given key.
+ * hashmap_get() - Gets value from hashmap from given key.
  * @map: The hashmap to be looked up. Must no be NULL.
  * @key: The key string. May be NULL.
  *
@@ -416,7 +408,7 @@ void *hashmap_get(hashmap_t *map, char *key)
 }
 
 /**
- * hashmap_contains() - checks if the key-value pair entry exists
+ * hashmap_contains() - Checks if the key-value pair entry exists
  * from given key.
  * @map: The hashmap to be looked up. Must no be NULL.
  * @key: The key string. May be NULL.
@@ -430,7 +422,7 @@ bool hashmap_contains(hashmap_t *map, char *key)
 }
 
 /**
- * hashmap_free() - frees the hashmap, this also frees key-value pair
+ * hashmap_free() - Frees the hashmap, this also frees key-value pair
  * entry's value.
  * @map: The hashmap to be looked up. Must no be NULL.
  */
@@ -526,22 +518,6 @@ void set_var_liveout(var_t *var, int end)
     var->liveness = end;
 }
 
-void add_label(char *name, int offset)
-{
-    label_lut_t *lut = &LABEL_LUT[label_lut_idx++];
-    strcpy(lut->name, name);
-    lut->offset = offset;
-}
-
-int find_label_offset(char name[])
-{
-    for (int i = 0; i < label_lut_idx; i++) {
-        if (!strcmp(LABEL_LUT[i].name, name))
-            return LABEL_LUT[i].offset;
-    }
-    return -1;
-}
-
 block_t *add_block(block_t *parent, func_t *func, macro_t *macro)
 {
     block_t *blk = malloc(sizeof(block_t));
@@ -563,28 +539,34 @@ block_t *add_block(block_t *parent, func_t *func, macro_t *macro)
 
 void add_alias(char *alias, char *value)
 {
-    alias_t *al = &ALIASES[aliases_idx++];
-    strcpy(al->alias, alias);
+    alias_t *al = hashmap_get(ALIASES_MAP, alias);
+    if (!al) {
+        al = malloc(sizeof(alias_t));
+        if (!al) {
+            printf("Failed to allocate alias_t\n");
+            return;
+        }
+        strcpy(al->alias, alias);
+        hashmap_put(ALIASES_MAP, alias, al);
+    }
     strcpy(al->value, value);
     al->disabled = false;
 }
 
 char *find_alias(char alias[])
 {
-    for (int i = 0; i < aliases_idx; i++) {
-        if (!ALIASES[i].disabled && !strcmp(alias, ALIASES[i].alias))
-            return ALIASES[i].value;
-    }
+    alias_t *al = hashmap_get(ALIASES_MAP, alias);
+    if (al && !al->disabled)
+        return al->value;
     return NULL;
 }
 
 bool remove_alias(char *alias)
 {
-    for (int i = 0; i < aliases_idx; i++) {
-        if (!ALIASES[i].disabled && !strcmp(alias, ALIASES[i].alias)) {
-            ALIASES[i].disabled = true;
-            return true;
-        }
+    alias_t *al = hashmap_get(ALIASES_MAP, alias);
+    if (al && !al->disabled) {
+        al->disabled = true;
+        return true;
     }
     return false;
 }
@@ -634,27 +616,6 @@ int find_macro_param_src_idx(char *name, block_t *parent)
     return 0;
 }
 
-func_t *add_func(char *name)
-{
-    func_t *fn;
-    if (hashmap_contains(FUNCS_MAP, name)) {
-        fn = hashmap_get(FUNCS_MAP, name);
-    } else {
-        fn = malloc(sizeof(func_t));
-
-        if (!fn) {
-            printf("Failed to allocate func_t\n");
-            return NULL;
-        }
-
-        hashmap_put(FUNCS_MAP, name, fn);
-        strcpy(fn->return_def.var_name, name);
-    }
-
-    fn->stack_size = 4; /* starting point of stack */
-    return fn;
-}
-
 type_t *add_type()
 {
     return &TYPES[types_idx++];
@@ -669,23 +630,20 @@ type_t *add_named_type(char *name)
 
 void add_constant(char alias[], int value)
 {
-    constant_t *constant = &CONSTANTS[constants_idx++];
+    constant_t *constant = malloc(sizeof(constant_t));
+    if (!constant) {
+        printf("Failed to allocate constant_t\n");
+        return;
+    }
+
     strcpy(constant->alias, alias);
     constant->value = value;
+    hashmap_put(CONSTANTS_MAP, alias, constant);
 }
 
 constant_t *find_constant(char alias[])
 {
-    for (int i = 0; i < constants_idx; i++) {
-        if (!strcmp(CONSTANTS[i].alias, alias))
-            return &CONSTANTS[i];
-    }
-    return NULL;
-}
-
-func_t *find_func(char func_name[])
-{
-    return hashmap_get(FUNCS_MAP, func_name);
+    return hashmap_get(CONSTANTS_MAP, alias);
 }
 
 var_t *find_member(char token[], type_t *type)
@@ -705,7 +663,7 @@ var_t *find_member(char token[], type_t *type)
 
 var_t *find_local_var(char *token, block_t *block)
 {
-    func_t *fn = block->func;
+    func_t *func = block->func;
 
     for (; block; block = block->parent) {
         for (int i = 0; i < block->next_local; i++) {
@@ -714,10 +672,10 @@ var_t *find_local_var(char *token, block_t *block)
         }
     }
 
-    if (fn) {
-        for (int i = 0; i < fn->num_params; i++) {
-            if (!strcmp(fn->param_defs[i].var_name, token))
-                return &fn->param_defs[i];
+    if (func) {
+        for (int i = 0; i < func->num_params; i++) {
+            if (!strcmp(func->param_defs[i].var_name, token))
+                return &func->param_defs[i];
         }
     }
     return NULL;
@@ -761,19 +719,55 @@ int size_var(var_t *var)
     return size;
 }
 
-/* TODO: Integrate with 'func_t' */
-fn_t *add_fn()
+/**
+ * add_func() - Creates a new function and adds it to the
+ * function lookup table and function list if it does not already exist,
+ * or returns the existing instance if the function already exists.
+ *
+ * Synthesized functions (e.g., compiler-generated functions like `__syscall`)
+ * are excluded from SSA analysis.
+ *
+ * @func_name: The name of the function. May be NULL.
+ * @synthesize: Indicates whether the function is synthesized by the compiler.
+ * Synthesized functions will not be analyzed by the SSA unit.
+ *
+ * Return: A pointer to the function.
+ */
+func_t *add_func(char *func_name, bool synthesize)
 {
-    fn_t *n = calloc(1, sizeof(fn_t));
+    func_t *func = hashmap_get(FUNC_MAP, func_name);
+
+    if (func)
+        return func;
+
+    func = calloc(1, sizeof(func_t));
+    hashmap_put(FUNC_MAP, func_name, func);
+    strcpy(func->return_def.var_name, func_name);
+    func->stack_size = 4;
+
+    if (synthesize)
+        return func;
 
     if (!FUNC_LIST.head) {
-        FUNC_LIST.head = n;
-        FUNC_LIST.tail = n;
-        return n;
+        FUNC_LIST.head = func;
+        FUNC_LIST.tail = func;
+    } else {
+        FUNC_LIST.tail->next = func;
+        FUNC_LIST.tail = func;
     }
-    FUNC_LIST.tail->next = n;
-    FUNC_LIST.tail = n;
-    return n;
+
+    return func;
+}
+
+/**
+ * find_func() - Finds the function in function map.
+ * @func_name: The name of the function. May be NULL.
+ *
+ * Return: A pointer to the function if exists, NULL otherwise.
+ */
+func_t *find_func(char *func_name)
+{
+    return hashmap_get(FUNC_MAP, func_name);
 }
 
 /* Create a basic block and set the scope of variables to 'parent' block */
@@ -786,7 +780,7 @@ basic_block_t *bb_create(block_t *parent)
         bb->prev[i].type = NEXT;
     }
     bb->scope = parent;
-    bb->belong_to = parent->func->fn;
+    bb->belong_to = parent->func;
     return bb;
 }
 
@@ -911,7 +905,7 @@ void add_insn(block_t *block,
     bb->insn_list.tail = n;
 }
 
-source_t *create_source(int init_capacity)
+source_t *source_create(int init_capacity)
 {
     source_t *array = malloc(sizeof(source_t));
     if (!array)
@@ -928,12 +922,18 @@ source_t *create_source(int init_capacity)
     return array;
 }
 
-bool source_expand(source_t *src)
+bool source_extend(source_t *src, int len)
 {
-    if (src->size < src->capacity)
+    int new_size = src->size + len;
+
+    if (new_size < src->capacity)
         return true;
 
-    src->capacity <<= 1;
+    if (new_size > src->capacity << 1)
+        src->capacity = new_size;
+    else
+        src->capacity <<= 1;
+
     char *new_arr = malloc(src->capacity * sizeof(char));
 
     if (!new_arr)
@@ -949,7 +949,7 @@ bool source_expand(source_t *src)
 
 bool source_push(source_t *src, char value)
 {
-    if (!source_expand(src))
+    if (!source_extend(src, 1))
         return false;
 
     src->elements[src->size] = value;
@@ -958,7 +958,20 @@ bool source_push(source_t *src, char value)
     return true;
 }
 
-void source_release(source_t *src)
+bool source_push_str(source_t *src, char *value)
+{
+    int len = strlen(value);
+
+    if (!source_extend(src, len))
+        return false;
+
+    strncpy(src->elements + src->size, value, len);
+    src->size += len;
+
+    return true;
+}
+
+void source_free(source_t *src)
 {
     if (!src)
         return;
@@ -976,19 +989,19 @@ void global_init()
 
     BLOCKS.head = NULL;
     BLOCKS.tail = NULL;
+
     MACROS = malloc(MAX_ALIASES * sizeof(macro_t));
-    FUNCS_MAP = hashmap_create(MAX_FUNCS);
+    FUNC_MAP = hashmap_create(DEFAULT_FUNCS_SIZE);
     TYPES = malloc(MAX_TYPES * sizeof(type_t));
     GLOBAL_IR = malloc(MAX_GLOBAL_IR * sizeof(ph1_ir_t));
     PH1_IR = malloc(MAX_IR_INSTR * sizeof(ph1_ir_t));
     INSN_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     BB_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     PH2_IR_FLATTEN = malloc(MAX_IR_INSTR * sizeof(ph2_ir_t *));
-    LABEL_LUT = malloc(MAX_LABEL * sizeof(label_lut_t));
-    SOURCE = create_source(MAX_SOURCE);
-    INCLUSION_MAP = hashmap_create(MAX_INCLUSIONS);
-    ALIASES = malloc(MAX_ALIASES * sizeof(alias_t));
-    CONSTANTS = malloc(MAX_CONSTANTS * sizeof(constant_t));
+    SOURCE = source_create(MAX_SOURCE);
+    INCLUSION_MAP = hashmap_create(DEFAULT_INCLUSIONS_SIZE);
+    ALIASES_MAP = hashmap_create(MAX_ALIASES);
+    CONSTANTS_MAP = hashmap_create(MAX_CONSTANTS);
 
     elf_code = malloc(MAX_CODE);
     elf_data = malloc(MAX_DATA);
@@ -996,10 +1009,6 @@ void global_init()
     elf_symtab = malloc(MAX_SYMTAB);
     elf_strtab = malloc(MAX_STRTAB);
     elf_section = malloc(MAX_SECTION);
-
-    /* set starting point of global stack manually */
-    func_t *global_func = add_func("");
-    global_func->stack_size = 4;
 }
 
 void global_release()
@@ -1010,18 +1019,17 @@ void global_release()
         BLOCKS.head = next;
     }
     free(MACROS);
-    hashmap_free(FUNCS_MAP);
+    hashmap_free(FUNC_MAP);
     free(TYPES);
     free(GLOBAL_IR);
     free(PH1_IR);
     arena_free(INSN_ARENA);
     arena_free(BB_ARENA);
     free(PH2_IR_FLATTEN);
-    free(LABEL_LUT);
-    source_release(SOURCE);
+    source_free(SOURCE);
     hashmap_free(INCLUSION_MAP);
-    free(ALIASES);
-    free(CONSTANTS);
+    hashmap_free(ALIASES_MAP);
+    hashmap_free(CONSTANTS_MAP);
 
     free(elf_code);
     free(elf_data);
@@ -1076,7 +1084,7 @@ void dump_ph1_ir()
 {
     int indent = 0;
     ph1_ir_t *ph1_ir;
-    func_t *fn;
+    func_t *func;
     char rd[MAX_VAR_LEN], op1[MAX_VAR_LEN], op2[MAX_VAR_LEN];
 
     for (int i = 0; i < ph1_ir_idx; i++) {
@@ -1091,21 +1099,21 @@ void dump_ph1_ir()
 
         switch (ph1_ir->op) {
         case OP_define:
-            fn = find_func(ph1_ir->func_name);
-            printf("def %s", fn->return_def.type_name);
+            func = find_func(ph1_ir->func_name);
+            printf("def %s", func->return_def.type_name);
 
-            for (int j = 0; j < fn->return_def.is_ptr; j++)
+            for (int j = 0; j < func->return_def.is_ptr; j++)
                 printf("*");
             printf(" @%s(", ph1_ir->func_name);
 
-            for (int j = 0; j < fn->num_params; j++) {
+            for (int j = 0; j < func->num_params; j++) {
                 if (j != 0)
                     printf(", ");
-                printf("%s", fn->param_defs[j].type_name);
+                printf("%s", func->param_defs[j].type_name);
 
-                for (int k = 0; k < fn->param_defs[j].is_ptr; k++)
+                for (int k = 0; k < func->param_defs[j].is_ptr; k++)
                     printf("*");
-                printf(" %%%s", fn->param_defs[j].var_name);
+                printf(" %%%s", func->param_defs[j].var_name);
             }
             printf(")");
             break;
