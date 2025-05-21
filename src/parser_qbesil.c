@@ -459,7 +459,7 @@ void qs_data_add_sym(qs_ir_data_t *d,
         printf(
             "DATAITEM only accepts a global symbol as a pointer to an "
             "object\n");
-        exit(1);
+        abort();
     }
 
     qs_ir_dataitem_t item;
@@ -1021,7 +1021,7 @@ void qs_print_value(qs_ir_val_t *val)
         break;
     default:
         printf("Unexpected value kind\n");
-        exit(1);
+        abort();
     }
 }
 
@@ -1268,7 +1268,7 @@ void qs_print_inst(qs_ir_inst_t *in)
         break;
     default:
         printf("Unexpected instruction\n");
-        exit(1);
+        abort();
     }
 }
 

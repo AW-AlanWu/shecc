@@ -56,7 +56,7 @@ void qs_error_at(int line, int col, char *fmt, int arg1)
     printf(fmt, arg1);
     printf("\n");
     qs_arena_free_all();
-    exit(1);
+    abort();
 }
 
 bool qs_is_alpha(char c)
@@ -393,11 +393,9 @@ void qs_load_source_file(char *file)
 
     for (;;) {
         if (!fgets(buffer, MAX_LINE_LEN, f)) {
-            fclose(f);
-            return;
+            break;
         }
-        strcpy(SOURCE->elements + SOURCE->size, buffer);
-        SOURCE->size += strlen(buffer);
+        strbuf_puts(SOURCE, buffer);
     }
     fclose(f);
 }
