@@ -91,17 +91,18 @@ int main(int argc, char *argv[])
     /* initialize global objects */
     global_init();
 
-    if (qbesil) {
-        qs_parse(in);
-        exit(0);
-    }
-
     /* include libc */
     if (libc)
         libc_generate();
 
-    /* load and parse source code into IR */
-    parse(in);
+
+    if (qbesil) {
+        parse(NULL);
+        qs_parse(in);
+    } else {
+        /* load and parse source code into IR */
+        parse(in);
+    }
 
     ssa_build();
 

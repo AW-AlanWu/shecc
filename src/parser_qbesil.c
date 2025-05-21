@@ -4,6 +4,75 @@
 #include <string.h>
 
 /*
+ * SHECC IR builder
+ */
+basic_block_t *gen_function_body(func_t *func,
+                                 block_t *parent,
+                                 basic_block_t *bb)
+{
+    block_t *blk = add_block(parent, func, NULL);
+    bb->scope = blk;
+
+    /* call strlen */
+    /* find function */
+    func_t *f = find_func("strlen");
+
+    /* prepare parameter */
+    int index = elf_data->size;
+    elf_write_str(elf_data, "Hello\n");
+    elf_write_byte(elf_data, 0);
+    var_t *vd_str = require_var(parent);
+    strcpy(vd_str->var_name, "1145141919810");
+    vd_str->init_val = index;
+    add_insn(parent, bb, OP_load_data_address, vd_str, NULL, NULL, 0, NULL);
+    // push parameter to stack
+    // why sz assign 1?
+    add_insn(parent, bb, OP_push, NULL, vd_str, NULL, 1, NULL);
+
+    /* function call */
+    add_insn(parent, bb, OP_call, NULL, NULL, NULL, 0, f->return_def.var_name);
+
+    /* get return value */
+    var_t *vd_ret = require_var(parent);
+    strcpy(vd_ret->var_name, "19191919");
+    add_insn(parent, bb, OP_func_ret, vd_ret, NULL, NULL, 0, NULL);
+
+    /* Returns 0 */
+    // var_t *vd = require_var(blk);
+    // strcpy(vd->var_name, "tmp");
+    // vd->init_val = 0;
+    // add_insn(parent, bb, OP_load_constant, vd, NULL, NULL, 0, NULL);
+
+    add_insn(parent, bb, OP_return, NULL, vd_ret, NULL, 0, NULL);
+    bb_connect(bb, parent->func->exit, NEXT);
+
+    return NULL;
+}
+
+void gen()
+{
+    /* Synthesize a main function that returns 0 */
+    var_t *main_def = require_var(GLOBAL_BLOCK);
+    strcpy(main_def->var_name, "main");
+    main_def->is_global = true;
+
+    func_t *func = add_func("main", false);
+    memcpy(&func->return_def, main_def, sizeof(var_t));
+    GLOBAL_BLOCK->locals.size--;
+
+    /* main function's body */
+    /* Don't inherit global block as function's block's parent */
+    block_t *main_block = add_block(NULL, func, NULL);
+    func->bbs = bb_create(main_block);
+    func->exit = bb_create(main_block);
+
+    basic_block_t *bb = gen_function_body(func, main_block, func->bbs);
+
+    if (bb)
+        bb_connect(bb, func->exit, THEN);
+}
+
+/*
  * generic dynamic array implementation supporting multiple data types with
  * arena-based memory management.
  */
@@ -1343,6 +1412,7 @@ void qs_parse(char *in)
 {
     qs_init_arena();
     qs_init_lexer(in);
+    gen();
     qs_ir_module_t *mod = qs_parse_module();
     qs_print_module(mod);
 }

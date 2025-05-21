@@ -3016,7 +3016,7 @@ void load_source_file(char *file)
 
     FILE *f = fopen(file, "rb");
     if (!f)
-        abort();
+        return;
 
     for (;;) {
         if (!fgets(buffer, MAX_LINE_LEN, f)) {

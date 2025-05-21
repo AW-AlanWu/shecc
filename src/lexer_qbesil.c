@@ -386,6 +386,7 @@ void qs_expect(qs_token_kind_t k)
 void qs_load_source_file(char *file)
 {
     char buffer[MAX_LINE_LEN];
+    SOURCE->size = 0;
 
     FILE *f = fopen(file, "rb");
     if (!f)
@@ -398,6 +399,7 @@ void qs_load_source_file(char *file)
         strbuf_puts(SOURCE, buffer);
     }
     fclose(f);
+    SOURCE->elements[SOURCE->size] = 0;
 }
 
 void qs_init_lexer(char *file)
