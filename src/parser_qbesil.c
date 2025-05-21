@@ -4,75 +4,6 @@
 #include <string.h>
 
 /*
- * SHECC IR builder
- */
-basic_block_t *gen_function_body(func_t *func,
-                                 block_t *parent,
-                                 basic_block_t *bb)
-{
-    block_t *blk = add_block(parent, func, NULL);
-    bb->scope = blk;
-
-    /* call strlen */
-    /* find function */
-    func_t *f = find_func("strlen");
-
-    /* prepare parameter */
-    int index = elf_data->size;
-    elf_write_str(elf_data, "Hello\n");
-    elf_write_byte(elf_data, 0);
-    var_t *vd_str = require_var(parent);
-    strcpy(vd_str->var_name, "1145141919810");
-    vd_str->init_val = index;
-    add_insn(parent, bb, OP_load_data_address, vd_str, NULL, NULL, 0, NULL);
-    // push parameter to stack
-    // why sz assign 1?
-    add_insn(parent, bb, OP_push, NULL, vd_str, NULL, 1, NULL);
-
-    /* function call */
-    add_insn(parent, bb, OP_call, NULL, NULL, NULL, 0, f->return_def.var_name);
-
-    /* get return value */
-    var_t *vd_ret = require_var(parent);
-    strcpy(vd_ret->var_name, "19191919");
-    add_insn(parent, bb, OP_func_ret, vd_ret, NULL, NULL, 0, NULL);
-
-    /* Returns 0 */
-    // var_t *vd = require_var(blk);
-    // strcpy(vd->var_name, "tmp");
-    // vd->init_val = 0;
-    // add_insn(parent, bb, OP_load_constant, vd, NULL, NULL, 0, NULL);
-
-    add_insn(parent, bb, OP_return, NULL, vd_ret, NULL, 0, NULL);
-    bb_connect(bb, parent->func->exit, NEXT);
-
-    return NULL;
-}
-
-void gen()
-{
-    /* Synthesize a main function that returns 0 */
-    var_t *main_def = require_var(GLOBAL_BLOCK);
-    strcpy(main_def->var_name, "main");
-    main_def->is_global = true;
-
-    func_t *func = add_func("main", false);
-    memcpy(&func->return_def, main_def, sizeof(var_t));
-    GLOBAL_BLOCK->locals.size--;
-
-    /* main function's body */
-    /* Don't inherit global block as function's block's parent */
-    block_t *main_block = add_block(NULL, func, NULL);
-    func->bbs = bb_create(main_block);
-    func->exit = bb_create(main_block);
-
-    basic_block_t *bb = gen_function_body(func, main_block, func->bbs);
-
-    if (bb)
-        bb_connect(bb, func->exit, THEN);
-}
-
-/*
  * generic dynamic array implementation supporting multiple data types with
  * arena-based memory management.
  */
@@ -638,6 +569,87 @@ qs_ir_block_t *qs_block_find_pred(qs_ir_block_t *blk, char *name)
 }
 
 /*
+ * SHECC IR builder
+ */
+basic_block_t *gen_function_body(func_t *func,
+                                 block_t *parent,
+                                 basic_block_t *bb)
+{
+    block_t *blk = add_block(parent, func, NULL);
+    bb->scope = blk;
+
+    /* call strlen */
+    /* find function */
+    func_t *f = find_func("strlen");
+
+    /* prepare parameter */
+    int index = elf_data->size;
+    elf_write_str(elf_data, "Hello\n");
+    elf_write_byte(elf_data, 0);
+    var_t *vd_str = require_var(parent);
+    strcpy(vd_str->var_name, "1145141919810");
+    vd_str->init_val = index;
+    add_insn(parent, bb, OP_load_data_address, vd_str, NULL, NULL, 0, NULL);
+    // push parameter to stack
+    // why sz assign 1?
+    add_insn(parent, bb, OP_push, NULL, vd_str, NULL, 1, NULL);
+
+    /* function call */
+    add_insn(parent, bb, OP_call, NULL, NULL, NULL, 0, f->return_def.var_name);
+
+    /* get return value */
+    var_t *vd_ret = require_var(parent);
+    strcpy(vd_ret->var_name, "19191919");
+    add_insn(parent, bb, OP_func_ret, vd_ret, NULL, NULL, 0, NULL);
+
+    /* Returns 0 */
+    // var_t *vd = require_var(blk);
+    // strcpy(vd->var_name, "tmp");
+    // vd->init_val = 0;
+    // add_insn(parent, bb, OP_load_constant, vd, NULL, NULL, 0, NULL);
+
+    add_insn(parent, bb, OP_return, NULL, vd_ret, NULL, 0, NULL);
+    bb_connect(bb, parent->func->exit, NEXT);
+
+    return NULL;
+}
+
+void gen()
+{
+    /* Synthesize a main function that returns 0 */
+    var_t *main_def = require_var(GLOBAL_BLOCK);
+    strcpy(main_def->var_name, "main");
+    main_def->is_global = true;
+
+    func_t *func = add_func("main", false);
+    memcpy(&func->return_def, main_def, sizeof(var_t));
+    GLOBAL_BLOCK->locals.size--;
+
+    /* main function's body */
+    /* Don't inherit global block as function's block's parent */
+    block_t *main_block = add_block(NULL, func, NULL);
+    func->bbs = bb_create(main_block);
+    func->exit = bb_create(main_block);
+
+    basic_block_t *bb = gen_function_body(func, main_block, func->bbs);
+
+    if (bb)
+        bb_connect(bb, func->exit, THEN);
+}
+
+type_t *qs_type_conversion(qs_ir_type_t ty)
+{
+    if (ty == QS_TY_BYTE)
+        return TY_char;
+    if (ty == QS_TY_WORD)
+        return TY_int;
+    if (ty == QS_TY_VOID)
+        return TY_void;
+    fatal("Expected a type, but null was provided");
+    return NULL;
+}
+
+/*
  * parsing functions
  */
 
@@ -1094,8 +1106,12 @@ void qs_print_value(qs_ir_val_t *val)
     }
 }
 
-void qs_print_inst(qs_ir_inst_t *in)
+void qs_print_inst(qs_ir_inst_t *in,
+                   func_t *shecc_func,
+                   block_t *shecc_func_block,
+                   block_t *shecc_block)
 {
+    var_t *vd = require_var(shecc_block);
     printf("    ");
     switch (in->op) {
     case QS_OP_ADD:
@@ -1328,6 +1344,15 @@ void qs_print_inst(qs_ir_inst_t *in)
         printf(", %s, %s\n", in->blocks[0]->name, in->blocks[1]->name);
         break;
     case QS_OP_RET:
+        strcpy(vd->var_name, "tmp");
+        vd->init_val = 13;
+        add_insn(shecc_func_block, shecc_func->bbs, OP_load_constant, vd, NULL,
+                 NULL, 0, NULL);
+
+        add_insn(shecc_func_block, shecc_func->bbs, OP_return, NULL, vd, NULL,
+                 0, NULL);
+        bb_connect(shecc_func->bbs, shecc_func_block->func->exit, NEXT);
+
         printf("RET ");
         qs_print_value(&in->args[0]);
         printf("\n");
@@ -1341,15 +1366,23 @@ void qs_print_inst(qs_ir_inst_t *in)
     }
 }
 
-void qs_print_block(qs_ir_block_t *blk)
+void qs_print_block(qs_ir_block_t *blk,
+                    func_t *shecc_func,
+                    block_t *shecc_func_block,
+                    block_t *shecc_block)
 {
     for (int i = 0; i < blk->nin.len; ++i) {
-        qs_print_inst(&blk->ins[i]);
+        qs_print_inst(&blk->ins[i], shecc_func, shecc_func_block, shecc_block);
     }
 }
 
-void qs_print_func(qs_ir_func_t *func)
+void qs_print_func(qs_ir_func_t *func,
+                   func_t *shecc_func,
+                   block_t *shecc_func_block)
 {
+    block_t *shecc_block = add_block(shecc_func_block, shecc_func, NULL);
+    shecc_func->bbs->scope = shecc_block;
+
     printf("(");
     for (int i = 0; i < func->nparams; ++i) {
         if (i)
@@ -1362,7 +1395,8 @@ void qs_print_func(qs_ir_func_t *func)
     printf(") {\n");
     for (int i = 0; i < func->nblock.len; ++i) {
         printf("BLOCK %s:\n", func->blocks[i].name, func->blocks[i].nin.len);
-        qs_print_block(&func->blocks[i]);
+        qs_print_block(&func->blocks[i], shecc_func, shecc_func_block,
+                       shecc_block);
     }
     printf("}\n");
 }
@@ -1394,16 +1428,37 @@ void qs_print_data(qs_ir_data_t *data)
 
 void qs_print_module(qs_ir_module_t *mod)
 {
+    block_t *shecc_block = GLOBAL_BLOCK; /* global block */
+
     for (int i = 0; i < mod->nglobal.len; ++i) {
+        var_t *shecc_var = require_var(GLOBAL_BLOCK);
+        shecc_var->is_global = true;
+        shecc_var->init_val = 0;
+        shecc_var->is_ptr = 0;
+
         if (mod->globals[i].kind == QS_GLOBAL_DATA) {
             printf("data %s", mod->globals[i].name);
             qs_print_data(mod->globals[i].data);
         }
         if (mod->globals[i].kind == QS_GLOBAL_FUNC) {
+            shecc_var->is_func = false;
+            shecc_var->type = qs_type_conversion(mod->globals[i].func->rty);
+            strcpy(shecc_var->var_name, mod->globals[i].name + 1);
+            func_t *shecc_func = add_func(shecc_var->var_name, false);
+            memcpy(&shecc_func->return_def, shecc_var, sizeof(var_t));
+            shecc_block->locals.size--;
+
+            block_t *shecc_func_block = add_block(NULL, shecc_func, NULL);
+            shecc_func->bbs = bb_create(shecc_func_block);
+            shecc_func->exit = bb_create(shecc_func_block);
+
             printf("function ");
             qs_print_type(mod->globals[i].func->rty);
             printf(" %s", mod->globals[i].name);
-            qs_print_func(mod->globals[i].func);
+            qs_print_func(mod->globals[i].func, shecc_func, shecc_func_block);
+
+            // Assume only 1 function
+            // no bb connect
         }
     }
 }
@@ -1412,7 +1467,7 @@ void qs_parse(char *in)
 {
     qs_init_arena();
     qs_init_lexer(in);
-    gen();
+    // gen();
     qs_ir_module_t *mod = qs_parse_module();
     qs_print_module(mod);
 }
