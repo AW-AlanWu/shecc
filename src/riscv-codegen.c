@@ -93,13 +93,18 @@ void update_elf_offset(ph2_ir_t *ph2_ir)
     case OP_return:
         elf_offset += 24;
         return;
+    case OP_trunc:
+        elf_offset += 4;
+        return;
+    case OP_sign_ext:
+        elf_offset += 12;
+        return;
     default:
-        printf("Unknown opcode\n");
-        abort();
+        fatal("Unknown opcode");
     }
 }
 
-void cfg_flatten()
+void cfg_flatten(void)
 {
     func_t *func = find_func("__syscall");
     func->bbs->elf_offset = 48; /* offset of start + exit in codegen */
@@ -145,7 +150,7 @@ void cfg_flatten()
 
 void emit(int code)
 {
-    elf_write_code_int(code);
+    elf_write_int(elf_code, code);
 }
 
 void emit_ph2_ir(ph2_ir_t *ph2_ir)
@@ -236,14 +241,14 @@ void emit_ph2_ir(ph2_ir_t *ph2_ir)
         emit(__addi(__t0, __t0, rv_lo(ofs)));
         emit(__beq(rs1, __zero, 8));
         emit(__jalr(__zero, __t0, 0));
-        emit(__jal(__zero, ph2_ir->else_bb->elf_offset - elf_code_idx));
+        emit(__jal(__zero, ph2_ir->else_bb->elf_offset - elf_code->size));
         return;
     case OP_jump:
-        emit(__jal(__zero, ph2_ir->next_bb->elf_offset - elf_code_idx));
+        emit(__jal(__zero, ph2_ir->next_bb->elf_offset - elf_code->size));
         return;
     case OP_call:
         func = find_func(ph2_ir->func_name);
-        emit(__jal(__ra, func->bbs->elf_offset - elf_code_idx));
+        emit(__jal(__ra, func->bbs->elf_offset - elf_code->size));
         return;
     case OP_load_data_address:
         emit(__lui(rd, rv_hi(elf_data_start + ph2_ir->src0)));
@@ -396,13 +401,32 @@ void emit_ph2_ir(ph2_ir_t *ph2_ir)
         emit(__sltu(rd, __zero, rs1));
         emit(__xori(rd, rd, 1));
         return;
+    case OP_trunc:
+        if (ph2_ir->src1 == 1)
+            rs2 = 0xFF;
+        else if (ph2_ir->src1 == 2)
+            rs2 = 0xFFFF;
+        else if (ph2_ir->src1 == 4)
+            rs2 = 0xFFFFFFFF;
+        else
+            fatal("Unsupported truncation operation with invalid target size");
+
+        emit(__andi(rd, rs1, rs2));
+        return;
+    case OP_sign_ext:
+        /* TODO: Allow to sign extends to other types */
+        emit(__andi(rd, rs1, 0xFF));
+        emit(__slli(rd, rd, 24));
+        emit(__srai(rd, rd, 24));
+        /* TODO: Allow user to switch to Zbb extension if needed */
+        /* emit(__sext_b(rd, rs1)); */
+        return;
     default:
-        printf("Unknown opcode\n");
-        abort();
+        fatal("Unknown opcode");
     }
 }
 
-void code_generate()
+void code_generate(void)
 {
     elf_data_start = elf_code_start + elf_offset;
 
@@ -411,7 +435,7 @@ void code_generate()
     emit(__addi(__t0, __t0, rv_lo(GLOBAL_FUNC->stack_size)));
     emit(__sub(__sp, __sp, __t0));
     emit(__addi(__gp, __sp, 0));
-    emit(__jal(__ra, GLOBAL_FUNC->bbs->elf_offset - elf_code_idx));
+    emit(__jal(__ra, GLOBAL_FUNC->bbs->elf_offset - elf_code->size));
 
     /* exit */
     emit(__lui(__t0, rv_hi(GLOBAL_FUNC->stack_size)));
@@ -444,7 +468,7 @@ void code_generate()
     emit(__add(__t0, __gp, __t0));
     emit(__lw(__a0, __t0, 0));
     emit(__addi(__a1, __t0, 4));
-    emit(__jal(__zero, MAIN_BB->elf_offset - elf_code_idx));
+    emit(__jal(__zero, MAIN_BB->elf_offset - elf_code->size));
 
     for (int i = 0; i < ph2_ir_idx; i++) {
         ph2_ir = PH2_IR_FLATTEN[i];

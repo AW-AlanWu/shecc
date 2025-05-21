@@ -72,6 +72,8 @@ int main(int argc, char *argv[])
             } else
                 /* unsupported options */
                 abort();
+        } else if (argv[i][0] == '-') {
+            fatal("Unidentified option");
         } else if (!strcmp(argv[i], "-xqbesil")) {
             qbesil = 1;
         } else
@@ -101,11 +103,11 @@ int main(int argc, char *argv[])
     /* load and parse source code into IR */
     parse(in);
 
+    ssa_build();
+
     /* dump first phase IR */
     if (dump_ir)
-        dump_ph1_ir();
-
-    ssa_build(dump_ir);
+        dump_insn();
 
     /* SSA-based optimization */
     optimize();

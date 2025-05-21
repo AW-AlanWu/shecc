@@ -126,7 +126,7 @@ int arm_encode(arm_cond_t cond, int opcode, int rn, int rd, int op2)
     return (cond << 28) + (opcode << 20) + (rn << 16) + (rd << 12) + op2;
 }
 
-int __svc()
+int __svc(void)
 {
     return arm_encode(__AL, 240, 0, 0, 0);
 }
@@ -251,6 +251,11 @@ int __sub_r(arm_cond_t cond, arm_reg rd, arm_reg rs, arm_reg ro)
     return __mov(cond, 0, arm_sub, 0, rs, rd, ro);
 }
 
+int __and_i(arm_cond_t cond, arm_reg rd, arm_reg rs, int imm)
+{
+    return __mov(cond, 1, arm_and, 0, rs, rd, imm);
+}
+
 int __zero(int rd)
 {
     return __mov_i(__AL, rd, 0);
@@ -348,4 +353,13 @@ int __cmp_i(arm_cond_t cond, arm_reg rn, int imm)
 int __teq(arm_reg rd)
 {
     return __mov(__AL, 1, arm_teq, 1, rd, 0, 0);
+}
+
+int __sxtb(arm_cond_t cond, arm_reg rd, arm_reg rm, int rotation)
+{
+    if (rotation != 0 && rotation != 8 && rotation != 16 && rotation != 24)
+        fatal("SXTB rotation must be 0, 8, 16, or 24");
+
+    return arm_encode(cond, 106, 0xF, rd,
+                      rm | ((rotation >> 3) << 10) | (0x7 << 4));
 }

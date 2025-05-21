@@ -267,6 +267,12 @@ int main() { return 0; }
 EOF
 
 # functions
+try_ 0 << EOF
+int main(void) {
+    return 0;
+}
+EOF
+
 try_ 55 << EOF
 int sum(int m, int n) {
     int acc;
@@ -317,6 +323,14 @@ int main() {
     printf("%d %d %d\n", a, b, c);
     return 0;
 }
+EOF
+
+try_compile_error << EOF
+int main(void v) {}
+EOF
+
+try_compile_error << EOF
+int main(void, int i) {}
 EOF
 
 # Unreachable declaration should not cause prog seg-falut (prog should leave normally with exit code 0)
@@ -1768,6 +1782,31 @@ int main()
 	__syscall(__syscall_close, 1);
 	int c = fputc('a', stdout);
 	return c == -1;
+}
+EOF
+
+# tests integer type conversion
+# excerpted and modified from issue #166
+try_output 0 "a = -127, b = -78, c = -93, d = -44" << EOF
+int main()
+{
+    char a = 0x11, b = 0x22, c = 0x33, d = 0x44;
+    a += 6000;
+    b += 400;
+    c -= 400;
+    d -= 6000;
+    printf("a = %d, b = %d, c = %d, d = %d\n", a, b, c, d);
+    return 0;
+}
+EOF
+
+try_output 0 "-1 -1" << EOF
+int main()
+{
+    char a = 0xFF;
+    int b = a;
+    printf("%d %d\n", a, b);
+    return 0;
 }
 EOF
 

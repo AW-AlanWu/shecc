@@ -4,6 +4,9 @@ CFLAGS := -O -g \
 	-fwrapv \
 	-Wall -Wextra \
 	-Wno-unused-but-set-variable \
+	-Wno-unused-parameter \
+	-Wno-unused-function \
+	-Wshadow \
 	-Wno-variadic-macros \
 	-Wno-uninitialized \
 	-Wno-strict-prototypes \
@@ -13,9 +16,6 @@ CFLAGS := -O -g \
 
 BUILD_SESSION := .session.mk
 
-include mk/common.mk
-include mk/arm.mk
-include mk/riscv.mk
 -include $(BUILD_SESSION)
 
 STAGE0 := shecc
@@ -25,6 +25,7 @@ STAGE2 := shecc-stage2.elf
 OUT ?= out
 ARCHS = arm riscv
 ARCH ?= $(firstword $(ARCHS))
+HOST_ARCH = $(shell arch 2>/dev/null)
 SRCDIR := $(shell find src -type d)
 LIBDIR := $(shell find lib -type d)
 
@@ -40,17 +41,15 @@ all: config bootstrap
 ifeq (,$(filter $(ARCH),$(ARCHS)))
 $(error Support ARM and RISC-V only. Select the target with "ARCH=arm" or "ARCH=riscv")
 endif
-
-ifneq ("$(wildcard $(PWD)/config)","")
-TARGET_EXEC := $($(shell head -1 config | sed 's/.*: \([^ ]*\).*/\1/')_EXEC)
-endif
-export TARGET_EXEC
+include mk/$(ARCH).mk
+include mk/common.mk
 
 config:
 	$(Q)ln -s $(PWD)/$(SRCDIR)/$(ARCH)-codegen.c $(SRCDIR)/codegen.c
-	$(call $(ARCH)-specific-defs) > $@
+	$(Q)$(PRINTF) $(ARCH_DEFS) > $@
 	$(VECHO) "Target machine code switch to %s\n" $(ARCH)
 	$(Q)$(MAKE) $(BUILD_SESSION) --silent
+	$(Q)$(CONFIG_CHECK_CMD)
 
 $(OUT)/tests/%.elf: tests/%.c $(OUT)/$(STAGE0)
 	$(VECHO) "  SHECC\t$@\n"
@@ -106,6 +105,7 @@ $(OUT)/$(STAGE0): $(OUT)/libc.inc $(OBJS)
 	$(Q)$(CC) $(OBJS) -o $@
 
 $(OUT)/$(STAGE1): $(OUT)/$(STAGE0)
+	$(Q)$(STAGE1_CHECK_CMD)
 	$(VECHO) "  SHECC\t$@\n"
 	$(Q)$(OUT)/$(STAGE0) --dump-ir -o $@ $(SRCDIR)/main.c > $(OUT)/shecc-stage1.log
 	$(Q)chmod a+x $@
@@ -133,5 +133,6 @@ clean:
 
 distclean: clean
 	-$(RM) $(OUT)/inliner $(OUT)/target $(SRCDIR)/codegen.c config $(BUILD_SESSION)
+	-$(RM) DOM.dot CFG.dot
 
 -include $(deps)

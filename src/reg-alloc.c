@@ -240,7 +240,7 @@ void extend_liveness(basic_block_t *bb, insn_t *insn, var_t *var, int offset)
         var->consumed = insn->idx + offset;
 }
 
-void reg_alloc()
+void reg_alloc(void)
 {
     /* TODO: .bss and .data section */
     for (insn_t *global_insn = GLOBAL_FUNC->bbs->insn_list.head; global_insn;
@@ -258,9 +258,9 @@ void reg_alloc()
                     GLOBAL_FUNC->stack_size +=
                         align_size(PTR_SIZE * global_insn->rd->array_size);
                 else {
-                    type_t *type = find_type(global_insn->rd->type_name, 0);
                     GLOBAL_FUNC->stack_size +=
-                        align_size(global_insn->rd->array_size * type->size);
+                        align_size(global_insn->rd->array_size *
+                                   global_insn->rd->type->size);
                 }
 
                 dest = prepare_dest(GLOBAL_FUNC->bbs, global_insn->rd, -1, -1);
@@ -272,11 +272,11 @@ void reg_alloc()
                 global_insn->rd->offset = GLOBAL_FUNC->stack_size;
                 if (global_insn->rd->is_ptr)
                     GLOBAL_FUNC->stack_size += PTR_SIZE;
-                else if (strcmp(global_insn->rd->type_name, "int") &&
-                         strcmp(global_insn->rd->type_name, "char") &&
-                         strcmp(global_insn->rd->type_name, "_Bool")) {
-                    type_t *type = find_type(global_insn->rd->type_name, 0);
-                    GLOBAL_FUNC->stack_size += align_size(type->size);
+                else if (global_insn->rd->type != TY_int &&
+                         global_insn->rd->type != TY_char &&
+                         global_insn->rd->type != TY_bool) {
+                    GLOBAL_FUNC->stack_size +=
+                        align_size(global_insn->rd->type->size);
                 } else
                     /* 'char' is aligned to one byte for the convenience */
                     GLOBAL_FUNC->stack_size += 4;
@@ -362,10 +362,10 @@ void reg_alloc()
                     ir->src1 = insn->rd->offset;
                     break;
                 case OP_allocat:
-                    if ((!strcmp(insn->rd->type_name, "void") ||
-                         !strcmp(insn->rd->type_name, "int") ||
-                         !strcmp(insn->rd->type_name, "char") ||
-                         !strcmp(insn->rd->type_name, "_Bool")) &&
+                    if ((insn->rd->type == TY_void ||
+                         insn->rd->type == TY_int ||
+                         insn->rd->type == TY_char ||
+                         insn->rd->type == TY_bool) &&
                         insn->rd->array_size == 0)
                         break;
 
@@ -376,8 +376,7 @@ void reg_alloc()
                     if (insn->rd->is_ptr)
                         sz = PTR_SIZE;
                     else {
-                        type_t *type = find_type(insn->rd->type_name, 0);
-                        sz = type->size;
+                        sz = insn->rd->type->size;
                     }
 
                     if (insn->rd->array_size)
@@ -595,6 +594,15 @@ void reg_alloc()
                     ir->src0 = src0;
                     ir->dest = dest;
                     break;
+                case OP_trunc:
+                case OP_sign_ext:
+                    src0 = prepare_operand(bb, insn->rs1, -1);
+                    dest = prepare_dest(bb, insn->rd, src0, -1);
+                    ir = bb_add_ph2_ir(bb, insn->opcode);
+                    ir->src1 = insn->sz;
+                    ir->src0 = src0;
+                    ir->dest = dest;
+                    break;
                 default:
                     printf("Unknown opcode\n");
                     abort();
@@ -628,7 +636,7 @@ void reg_alloc()
             if (!bb)
                 continue;
 
-            if (strcmp(func->return_def.type_name, "void"))
+            if (func->return_def.type != TY_void)
                 continue;
 
             if (bb->insn_list.tail)
@@ -641,7 +649,7 @@ void reg_alloc()
     }
 }
 
-void dump_ph2_ir()
+void dump_ph2_ir(void)
 {
     for (int i = 0; i < ph2_ir_idx; i++) {
         ph2_ir_t *ph2_ir = PH2_IR_FLATTEN[i];
@@ -654,8 +662,6 @@ void dump_ph2_ir()
         case OP_define:
             printf("%s:", ph2_ir->func_name);
             break;
-        case OP_block_start:
-        case OP_block_end:
         case OP_allocat:
             continue;
         case OP_assign:
@@ -672,9 +678,6 @@ void dump_ph2_ir()
             break;
         case OP_global_address_of:
             printf("\t%%x%c = %%gp + %d", rd, ph2_ir->src0);
-            break;
-        case OP_label:
-            printf("%s:", ph2_ir->func_name);
             break;
         case OP_branch:
             printf("\tbr %%x%c", rs1);
@@ -777,6 +780,12 @@ void dump_ph2_ir()
             break;
         case OP_lshift:
             printf("\t%%x%c = lshift %%x%c, %%x%c", rd, rs1, rs2);
+            break;
+        case OP_trunc:
+            printf("\t%%x%c = trunc %%x%c, %d", rd, rs1, ph2_ir->src1);
+            break;
+        case OP_sign_ext:
+            printf("\t%%x%c = sign_ext %%x%c, %d", rd, rs1, ph2_ir->src1);
             break;
         default:
             break;

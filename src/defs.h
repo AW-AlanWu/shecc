@@ -205,12 +205,9 @@ typedef enum {
     OP_load_data_address, /* lookup address of a constant in data section */
 
     /* control flow */
-    OP_label,
-    OP_branch,      /* conditional jump */
-    OP_jump,        /* unconditional jump */
-    OP_func_ret,    /* returned value */
-    OP_block_start, /* code block start */
-    OP_block_end,   /* code block end */
+    OP_branch,   /* conditional jump */
+    OP_jump,     /* unconditional jump */
+    OP_func_ret, /* returned value */
 
     /* function pointer */
     OP_address_of_func, /* resolve function entry */
@@ -251,6 +248,10 @@ typedef enum {
     OP_bit_not,
     OP_negate,
 
+    /* data type conversion */
+    OP_trunc,
+    OP_sign_ext,
+
     /* entry point of the state machine */
     OP_start
 } opcode_t;
@@ -279,8 +280,17 @@ typedef struct use_chain_node {
     struct use_chain_node *prev;
 } use_chain_t;
 
+typedef struct var var_t;
+typedef struct type type_t;
+
+typedef struct var_list {
+    int capacity;
+    int size;
+    var_t **elements;
+} var_list_t;
+
 struct var {
-    char type_name[MAX_TYPE_LEN];
+    type_t *type;
     char var_name[MAX_VAR_LEN];
     int is_ptr;
     bool is_func;
@@ -305,8 +315,6 @@ struct var {
     bool is_const; /* whether a constant representaion or not */
 };
 
-typedef struct var var_t;
-
 typedef struct {
     char name[MAX_VAR_LEN];
     bool is_variadic;
@@ -322,36 +330,17 @@ typedef struct func func_t;
 
 /* block definition */
 struct block {
-    var_t locals[MAX_LOCALS];
-    int next_local;
+    var_list_t locals;
     struct block *parent;
     func_t *func;
     macro_t *macro;
-    int locals_size;
     struct block *next;
 };
 
 typedef struct block block_t;
-
-typedef struct {
-    block_t *head;
-    block_t *tail;
-} block_list_t;
-
-/* phase-1 IR definition */
-typedef struct {
-    opcode_t op;
-    char func_name[MAX_VAR_LEN];
-    int param_num;
-    int size;
-    var_t *dest;
-    var_t *src0;
-    var_t *src1;
-} ph1_ir_t;
-
 typedef struct basic_block basic_block_t;
 
-/* Definition of a dynamic array structure for sources in src/globals.c
+/* Definition of a growable buffer for a mutable null-terminated string
  * size:     Current number of elements in the array
  * capacity: Number of elements that can be stored without resizing
  * elements: Pointer to the array of characters
@@ -360,7 +349,7 @@ typedef struct {
     int size;
     int capacity;
     char *elements;
-} source_t;
+} strbuf_t;
 
 /* phase-2 IR definition */
 struct ph2_ir {
@@ -387,8 +376,6 @@ struct type {
     var_t fields[MAX_FIELDS];
     int num_fields;
 };
-
-typedef struct type type_t;
 
 /* lvalue details */
 typedef struct {
@@ -469,8 +456,10 @@ struct basic_block {
     insn_list_t insn_list;
     ph2_ir_list_t ph2_ir_list;
     bb_connection_t prev[MAX_BB_PRED];
-    struct basic_block *next;  /* normal BB */
-    struct basic_block *then_; /* conditional BB */
+    char bb_label_name[MAX_VAR_LEN]; /* Used in instruction dumping when ir_dump
+                                        is enabled. */
+    struct basic_block *next;        /* normal BB */
+    struct basic_block *then_;       /* conditional BB */
     struct basic_block *else_;
     struct basic_block *idom;
     struct basic_block *r_idom;
@@ -547,3 +536,48 @@ typedef struct {
     var_t *var;
     int polluted;
 } regfile_t;
+
+/* FIXME: replace char[2] with a short data type in ELF header structures */
+/* ELF header */
+typedef struct {
+    char e_ident[16];
+    char e_type[2];
+    char e_machine[2];
+    int e_version;
+    int e_entry;
+    int e_phoff;
+    int e_shoff;
+    int e_flags;
+    char e_ehsize[2];
+    char e_phentsize[2];
+    char e_phnum[2];
+    char e_shentsize[2];
+    char e_shnum[2];
+    char e_shstrndx[2];
+} elf32_hdr_t;
+
+/* ELF program header */
+typedef struct {
+    int p_type;
+    int p_offset;
+    int p_vaddr;
+    int p_paddr;
+    int p_filesz;
+    int p_memsz;
+    int p_flags;
+    int p_align;
+} elf32_phdr_t;
+
+/* ELF section header */
+typedef struct {
+    int sh_name;
+    int sh_type;
+    int sh_flags;
+    int sh_addr;
+    int sh_offset;
+    int sh_size;
+    int sh_link;
+    int sh_info;
+    int sh_addralign;
+    int sh_entsize;
+} elf32_shdr_t;

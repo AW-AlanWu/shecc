@@ -30,6 +30,8 @@ typedef enum {
     rv_srai = 1073762323 /* 0b0010011 + (5 << 12) + (0x20 << 25) */,
     rv_slti = 8211 /* 0b0010011 + (2 << 12) */,
     rv_sltiu = 12307 /* 0b0010011 + (3 << 12) */,
+    rv_sext_b =
+        1614811155 /* 0b0010011 + (1 << 12) + (0x604 << 20) (imm included)*/,
     /* load/store */
     rv_lb = 3 /* 0b11 */,
     rv_lh = 4099 /* 0b11 + (1 << 12) */,
@@ -370,17 +372,17 @@ int __auipc(rv_reg rd, int imm)
     return rv_encode_U(rv_auipc, rd, imm);
 }
 
-int __ecall()
+int __ecall(void)
 {
     return rv_encode_I(rv_ecall, __zero, __zero, 0);
 }
 
-int __ebreak()
+int __ebreak(void)
 {
     return rv_encode_I(rv_ebreak, __zero, __zero, 1);
 }
 
-int __nop()
+int __nop(void)
 {
     return __addi(__zero, __zero, 0);
 }
@@ -398,4 +400,9 @@ int __div(rv_reg rd, rv_reg rs1, rv_reg rs2)
 int __mod(rv_reg rd, rv_reg rs1, rv_reg rs2)
 {
     return rv_encode_R(rv_mod, rd, rs1, rs2);
+}
+
+int __sext_b(rv_reg rd, rv_reg rs)
+{
+    return rv_encode_I(rv_sext_b, rd, rs, 0);
 }

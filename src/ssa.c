@@ -102,7 +102,7 @@ void bb_build_rpo(func_t *func, basic_block_t *bb)
     prev->rpo_next = bb;
 }
 
-void build_rpo()
+void build_rpo(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -146,7 +146,7 @@ basic_block_t *intersect(basic_block_t *i, basic_block_t *j)
  *   Cooper, Keith D.; Harvey, Timothy J.; Kennedy, Ken (2001).
  *   "A Simple, Fast Dominance Algorithm"
  */
-void build_idom()
+void build_idom(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         bool changed;
@@ -219,7 +219,7 @@ void bb_build_dom(func_t *func, basic_block_t *bb)
     }
 }
 
-void build_dom()
+void build_dom(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -254,7 +254,7 @@ void bb_build_df(func_t *func, basic_block_t *bb)
     }
 }
 
-void build_df()
+void build_df(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -279,7 +279,7 @@ basic_block_t *reverse_intersect(basic_block_t *i, basic_block_t *j)
     return i;
 }
 
-void build_r_idom()
+void build_r_idom(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         bool changed;
@@ -349,7 +349,7 @@ void bb_build_rdom(func_t *func, basic_block_t *bb)
     }
 }
 
-void build_rdom()
+void build_rdom(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -394,7 +394,7 @@ void bb_build_rdf(func_t *func, basic_block_t *bb)
     }
 }
 
-void build_rdf()
+void build_rdf(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -442,7 +442,7 @@ void use_chain_delete(use_chain_t *u, var_t *var)
     free(u);
 }
 
-void use_chain_build()
+void use_chain_build(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
@@ -547,7 +547,7 @@ void bb_solve_globals(func_t *func, basic_block_t *bb)
     }
 }
 
-void solve_globals()
+void solve_globals(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -566,9 +566,8 @@ bool var_check_in_scope(var_t *var, block_t *block)
     func_t *func = block->func;
 
     while (block) {
-        for (int i = 0; i < block->next_local; i++) {
-            var_t *locals = block->locals;
-            if (var == &locals[i])
+        for (int i = 0; i < block->locals.capacity; i++) {
+            if (var == block->locals.elements[i])
                 return true;
         }
         block = block->parent;
@@ -611,7 +610,7 @@ bool insert_phi_insn(basic_block_t *bb, var_t *var)
     return true;
 }
 
-void solve_phi_insertion()
+void solve_phi_insertion(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         for (symbol_t *sym = func->global_sym_list.head; sym; sym = sym->next) {
@@ -795,7 +794,7 @@ void bb_solve_phi_params(basic_block_t *bb)
     }
 }
 
-void solve_phi_params()
+void solve_phi_params(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         for (int i = 0; i < func->num_params; i++) {
@@ -867,7 +866,7 @@ void bb_unwind_phi(func_t *func, basic_block_t *bb)
         insn->prev = NULL;
 }
 
-void unwind_phi()
+void unwind_phi(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -1126,6 +1125,17 @@ void bb_dump(FILE *fd, func_t *func, basic_block_t *bb)
                         insn->rd->var_name, insn->rd->subscript,
                         insn->rs1->var_name, insn->rs1->subscript);
                 break;
+            case OP_trunc:
+                sprintf(str, "<%s<SUB>%d</SUB> := trunc %s<SUB>%d</SUB>, %d>",
+                        insn->rd->var_name, insn->rd->subscript,
+                        insn->rs1->var_name, insn->rs1->subscript, insn->sz);
+                break;
+            case OP_sign_ext:
+                sprintf(str,
+                        "<%s<SUB>%s</SUB> := sign_ext %s<SUB>%d</SUB>, %d>",
+                        insn->rd->var_name, insn->rd->subscript,
+                        insn->rs1->var_name, insn->rs1->subscript, insn->sz);
+                break;
             default:
                 printf("Unknown opcode\n");
                 abort();
@@ -1202,7 +1212,7 @@ void dump_dom(char name[])
 }
 #endif
 
-void ssa_build(int dump_ir)
+void ssa_build(void)
 {
     build_rpo();
     build_idom();
@@ -1489,7 +1499,7 @@ void dce_insn(basic_block_t *bb)
     }
 }
 
-void dce_sweep()
+void dce_sweep(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
@@ -1530,7 +1540,7 @@ void dce_sweep()
 
 void build_reversed_rpo();
 
-void optimize()
+void optimize(void)
 {
     /* build rdf information for DCE */
     build_reversed_rpo();
@@ -1597,7 +1607,7 @@ void bb_build_reversed_rpo(func_t *func, basic_block_t *bb)
     prev->rpo_r_next = bb;
 }
 
-void build_reversed_rpo()
+void build_reversed_rpo(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
@@ -1747,7 +1757,7 @@ bool recompute_live_out(basic_block_t *bb)
     return false;
 }
 
-void liveness_analysis()
+void liveness_analysis(void)
 {
     bb_traversal_args_t *args = calloc(1, sizeof(bb_traversal_args_t));
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
