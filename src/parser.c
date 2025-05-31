@@ -2857,11 +2857,11 @@ void read_global_statement(void)
 
         /* has forward declaration? */
         type_t *type = find_type(token, 2);
-        if (!type)
+        if (!type) {
             type = add_type();
-
-        strcpy(type->type_name, token);
-        type->base_type = TYPE_struct;
+            type = add_named_type(token, type);
+            type->base_type = TYPE_struct;
+        }
 
         lex_expect(T_open_curly);
         do {
@@ -2894,7 +2894,7 @@ void read_global_statement(void)
             } while (lex_accept(T_comma));
             lex_expect(T_close_curly);
             lex_ident(T_identifier, token);
-            strcpy(type->type_name, token);
+            type = add_named_type(token, type);
             lex_expect(T_semicolon);
         } else if (lex_accept(T_struct)) {
             int i = 0, size = 0, has_struct_def = 0;
@@ -2909,7 +2909,7 @@ void read_global_statement(void)
                 if (!tag) {
                     tag = add_type();
                     tag->base_type = TYPE_struct;
-                    strcpy(tag->type_name, token);
+                    tag = add_named_type(token, tag);
                 }
             }
 
@@ -2929,6 +2929,7 @@ void read_global_statement(void)
             type->size = size;
             type->num_fields = i;
             type->base_type = TYPE_typedef;
+            type = add_named_type(type->type_name, type);
 
             if (tag && has_struct_def == 1) {
                 strcpy(token, tag->type_name);
@@ -2956,6 +2957,7 @@ void read_global_statement(void)
             type->size = base->size;
             type->num_fields = 0;
             lex_ident(T_identifier, type->type_name);
+            type = add_named_type(type->type_name, type);
             lex_expect(T_semicolon);
         }
     } else if (lex_peek(T_identifier, NULL)) {
@@ -2972,15 +2974,18 @@ void parse_internal(void)
     GLOBAL_FUNC->bbs = arena_alloc(BB_ARENA, sizeof(basic_block_t));
 
     /* built-in types */
-    TY_void = add_named_type("void");
+    TY_void = add_type();
+    TY_void = add_named_type("void", TY_void);
     TY_void->base_type = TYPE_void;
     TY_void->size = 0;
 
-    TY_char = add_named_type("char");
+    TY_char = add_type();
+    TY_char = add_named_type("char", TY_char);
     TY_char->base_type = TYPE_char;
     TY_char->size = 1;
 
-    TY_int = add_named_type("int");
+    TY_int = add_type();
+    TY_int = add_named_type("int", TY_int);
     TY_int->base_type = TYPE_int;
     TY_int->size = 4;
 
@@ -2988,7 +2993,8 @@ void parse_internal(void)
      * well-known as macro type bool, which is defined in <std_bool.h> (in
      * shecc, it is defined in 'lib/c.c').
      */
-    TY_bool = add_named_type("_Bool");
+    TY_bool = add_type();
+    TY_bool = add_named_type("_Bool", TY_bool);
     TY_bool->base_type = TYPE_char;
     TY_bool->size = 1;
 
