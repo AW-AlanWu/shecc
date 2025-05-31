@@ -41,7 +41,8 @@ hashmap_t *CONSTANTS_MAP;
 
 /* Types */
 
-hashmap_t *TYPES_MAP;
+type_t *TYPES;
+int types_idx = 0;
 
 type_t *TY_void;
 type_t *TY_char;
@@ -525,13 +526,26 @@ int hard_mul_div = 0;
  */
 type_t *find_type(char *type_name, int flag)
 {
-    type_t *type = hashmap_get(TYPES_MAP, type_name);
-    if (!type)
-        return NULL;
-    if (type->base_type == TYPE_struct)
-        return flag == 1 ? NULL : type;
-    else
-        return flag == 2 ? NULL : type;
+    for (int i = 0; i < types_idx; i++) {
+        if (TYPES[i].base_type == TYPE_struct) {
+            if (flag == 1)
+                continue;
+            if (!strcmp(TYPES[i].type_name, type_name))
+                return &TYPES[i];
+        } else {
+            if (flag == 2)
+                continue;
+            if (!strcmp(TYPES[i].type_name, type_name)) {
+                /* If it is a forwardly declared alias of a structure, return
+                 * the base structure type.
+                 */
+                if (TYPES[i].base_type == TYPE_typedef && TYPES[i].size == 0)
+                    return TYPES[i].base_struct;
+                return &TYPES[i];
+            }
+        }
+    }
+    return NULL;
 }
 
 ph2_ir_t *add_existed_ph2_ir(ph2_ir_t *ph2_ir)
@@ -649,14 +663,19 @@ int find_macro_param_src_idx(char *name, block_t *parent)
 type_t *add_type(void)
 {
     type_t *type = malloc(sizeof(type_t));
+    if (!type) {
+        printf("oh no!!\n");
+        exit(1);
+    }
     return type;
 }
 
 type_t *add_named_type(char *type_name, type_t *type)
 {
     strcpy(type->type_name, type_name);
-    hashmap_put(TYPES_MAP, type_name, type);
-    return type;
+    type_t *ptr = &TYPES[types_idx++];
+    memcpy(ptr, type, sizeof(type_t));
+    return ptr;
 }
 
 void add_constant(char alias[], int value)
@@ -1022,7 +1041,7 @@ void global_init(void)
     elf_code_start = ELF_START + elf_header_len;
 
     MACROS = malloc(MAX_ALIASES * sizeof(macro_t));
-    TYPES_MAP = hashmap_create(MAX_TYPES);
+    TYPES = malloc(MAX_TYPES * sizeof(type_t));
     BLOCK_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     INSN_ARENA = arena_init(DEFAULT_ARENA_SIZE);
     BB_ARENA = arena_init(DEFAULT_ARENA_SIZE);
@@ -1044,7 +1063,7 @@ void global_init(void)
 void global_release(void)
 {
     free(MACROS);
-    hashmap_free(TYPES_MAP);
+    free(TYPES);
     arena_free(BLOCK_ARENA);
     arena_free(INSN_ARENA);
     arena_free(BB_ARENA);
