@@ -33,12 +33,14 @@ Generated artifacts (`out/`, `config`, `src/codegen.c`, `.session.mk`, test logs
 5. Cleanups: `make clean` removes build results for the active backend; `make distclean` purges generated helpers (`out/inliner`, `out/norm-lf`, `config`, the codegen link, etc.).
 
 ## Testing Expectations
-Run the following after code changes (pick commands according to what you touched):
+Run the following after code changes (pick commands according to what you touched).  Always rebuild first, then execute the
+relevant tests before declaring the work complete:
 - Always run `make check` for compiler, runtime (`lib/`), or tool (`tools/`) modifications.
 - If you changed lexer/parser/IR/backends (`src/`), also run `make check-snapshot` for the currently configured architecture; update snapshots only when differences are intended.
 - If you touched low-level code that could affect memory safety (allocator, libc, code generation, register allocation, etc.), run `make check-sanitizer`.
 - For documentation-only edits, tests may be skipped; call this out explicitly in the final summary.
 - Formatting/newline checks: when you modify C/C++ headers or sources, format them with `clang-format-18 -i` and verify with `.ci/check-format.sh`.  Ensure all tracked files end with a newline using `.ci/check-newline.sh`.
+When unsure which bucket a change falls into, default to the full local regression suite (`make`, `make sanitizer`, `make check-sanitizer`, `make check-snapshots`, `make check`).
 
 Document the exact commands you executed (or why they were skipped) in the final report.
 
