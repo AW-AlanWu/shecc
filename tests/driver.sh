@@ -1775,6 +1775,53 @@ int main()
 }
 EOF
 
+# multiple global declarators with initializers
+try_ 6 << EOF
+int x = 1, y = 2, z = 3;
+int main()
+{
+    return x + y + z;
+}
+EOF
+
+# mixed declarators sharing a base type
+try_ 42 << EOF
+int base = 30;
+int simple, values[3];
+int main()
+{
+    simple = base;
+    values[0] = 4;
+    values[1] = 5;
+    values[2] = 3;
+    return simple + values[0] + values[1] + values[2];
+}
+EOF
+
+# function prototype with continuation declarator
+try_ 9 << EOF
+int sum(int a, int b), offset = 1;
+int sum(int a, int b)
+{
+    return a + b;
+}
+int main()
+{
+    return sum(4, 4) + offset;
+}
+EOF
+
+# pointer continuation without initializer
+try_ 30 << EOF
+int simple, *ptr;
+int main()
+{
+    simple = 30;
+    ptr = &simple;
+    return *ptr;
+}
+EOF
+
 # Category: Const Qualifiers
 begin_category "Const Qualifiers" "Testing const qualifier support for variables and parameters"
 
