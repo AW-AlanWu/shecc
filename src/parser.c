@@ -4759,6 +4759,21 @@ void read_func_body(func_t *func)
 }
 
 /* if first token is type */
+void handle_global_initializer(block_t *block, var_t *var)
+{
+    if (lex_accept(T_assign)) {
+        if (lex_peek(T_open_curly, NULL) &&
+            (var->array_size > 0 || var->ptr_level > 0)) {
+            parse_array_init(var, block, &GLOBAL_FUNC->bbs, true);
+            opstack_pop();
+        } else {
+            read_global_assignment(var->var_name);
+        }
+    } else {
+        opstack_pop();
+    }
+}
+
 void read_global_decl(block_t *block, bool is_const)
 {
     var_t *var = require_var(block);
@@ -4783,36 +4798,21 @@ void read_global_decl(block_t *block, bool is_const)
         if (lex_accept(T_semicolon)) /* forward definition */
             return;
         error("Syntax error in global declaration");
-    } else
-        add_insn(block, GLOBAL_FUNC->bbs, OP_allocat, var, NULL, NULL, 0, NULL);
-
-    /* is a variable */
-    if (lex_accept(T_assign)) {
-        /* If '{' follows and this is an array (explicit or implicit-size via
-         * pointer syntax), reuse the array initializer to emit per-element
-         * stores for globals as well.
-         */
-        if (lex_peek(T_open_curly, NULL) &&
-            (var->array_size > 0 || var->ptr_level > 0)) {
-            parse_array_init(var, block, &GLOBAL_FUNC->bbs, true);
-            lex_expect(T_semicolon);
-            return;
-        }
-
-        /* Otherwise fall back to scalar/constant global assignment */
-        read_global_assignment(var->var_name);
-        lex_expect(T_semicolon);
-        return;
-    } else if (lex_accept(T_comma)) {
-        /* TODO: Implement global variable continuation syntax for multiple
-         * declarations in single statement (e.g., int a = 1, b = 2;)
-         */
-        error("Global continuation not supported");
-    } else if (lex_accept(T_semicolon)) {
-        opstack_pop();
-        return;
     }
-    error("Syntax error in global declaration");
+
+    add_insn(block, GLOBAL_FUNC->bbs, OP_allocat, var, NULL, NULL, 0, NULL);
+    handle_global_initializer(block, var);
+
+    while (lex_accept(T_comma)) {
+        var_t *nv = require_typed_var(block, var->type);
+        nv->is_global = true;
+        nv->is_const_qualified = is_const;
+        read_partial_var_decl(nv, var);
+        add_insn(block, GLOBAL_FUNC->bbs, OP_allocat, nv, NULL, NULL, 0, NULL);
+        handle_global_initializer(block, nv);
+    }
+
+    lex_expect(T_semicolon);
 }
 
 void consume_global_compound_literal(void)

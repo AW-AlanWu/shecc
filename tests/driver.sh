@@ -1775,6 +1775,36 @@ int main()
 }
 EOF
 
+# global continuation with multiple declarators
+try_ 6 << EOF
+int a = 1, b = 2, c = 3;
+int main()
+{
+    return a + b + c;
+}
+EOF
+
+# global continuation mixing initialized and uninitialized declarators
+try_ 20 << EOF
+int first, second = 7, third;
+int main()
+{
+    first = 5;
+    third = 8;
+    return first + second + third;
+}
+EOF
+
+# global continuation with arrays and pointers
+try_ 5 << EOF
+int values[3] = {1, 2, 3}, extra = 4;
+int *null_ptr = 0, *other_ptr = 0;
+int main()
+{
+    return extra + (null_ptr == other_ptr);
+}
+EOF
+
 # Category: Const Qualifiers
 begin_category "Const Qualifiers" "Testing const qualifier support for variables and parameters"
 
