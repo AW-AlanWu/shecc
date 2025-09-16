@@ -4783,36 +4783,53 @@ void read_global_decl(block_t *block, bool is_const)
         if (lex_accept(T_semicolon)) /* forward definition */
             return;
         error("Syntax error in global declaration");
-    } else
+    }
+
+    type_t *base_type = var->type;
+
+    for (;;) {
         add_insn(block, GLOBAL_FUNC->bbs, OP_allocat, var, NULL, NULL, 0, NULL);
 
-    /* is a variable */
-    if (lex_accept(T_assign)) {
-        /* If '{' follows and this is an array (explicit or implicit-size via
-         * pointer syntax), reuse the array initializer to emit per-element
-         * stores for globals as well.
-         */
-        if (lex_peek(T_open_curly, NULL) &&
-            (var->array_size > 0 || var->ptr_level > 0)) {
-            parse_array_init(var, block, &GLOBAL_FUNC->bbs, true);
-            lex_expect(T_semicolon);
+        bool var_on_stack = !var->is_func;
+
+        if (lex_accept(T_assign)) {
+            /* If '{' follows and this is an array (explicit or implicit-size
+             * via pointer syntax), reuse the array initializer to emit
+             * per-element stores for globals as well.
+             */
+            if (lex_peek(T_open_curly, NULL) &&
+                (var->array_size > 0 || var->ptr_level > 0)) {
+                parse_array_init(var, block, &GLOBAL_FUNC->bbs, true);
+                var_on_stack = !var->is_func;
+            } else {
+                /* Otherwise fall back to scalar/constant global assignment */
+                read_global_assignment(var->var_name);
+                var_on_stack = false;
+            }
+        }
+
+        if (lex_accept(T_comma)) {
+            if (var_on_stack)
+                opstack_pop();
+
+            var_t *next = require_var(block);
+            next->is_global = true;
+            next->is_const_qualified = is_const;
+            next->type = base_type;
+            read_inner_var_decl(next, false, false);
+
+            var = next;
+            continue;
+        }
+
+        if (lex_accept(T_semicolon)) {
+            if (var_on_stack)
+                opstack_pop();
             return;
         }
 
-        /* Otherwise fall back to scalar/constant global assignment */
-        read_global_assignment(var->var_name);
-        lex_expect(T_semicolon);
-        return;
-    } else if (lex_accept(T_comma)) {
-        /* TODO: Implement global variable continuation syntax for multiple
-         * declarations in single statement (e.g., int a = 1, b = 2;)
-         */
-        error("Global continuation not supported");
-    } else if (lex_accept(T_semicolon)) {
-        opstack_pop();
-        return;
+        error("Syntax error in global declaration");
     }
-    error("Syntax error in global declaration");
 }
 
 void consume_global_compound_literal(void)
