@@ -1775,6 +1775,47 @@ int main()
 }
 EOF
 
+# Multiple declarators without initializers
+try_ 6 << EOF
+int g1, g2, g3;
+int main()
+{
+    g1 = 1;
+    g2 = 2;
+    g3 = 3;
+    return g1 + g2 + g3;
+}
+EOF
+
+# Multiple declarators with scalar initializers
+try_ 21 << EOF
+int gx = 7, gy = 14;
+int main()
+{
+    return gx + gy;
+}
+EOF
+
+# Array declarator followed by scalar declarator
+try_ 15 << EOF
+int numbers[2], extra = 7;
+int main()
+{
+    numbers[0] = 3;
+    numbers[1] = 5;
+    return numbers[0] + numbers[1] + extra;
+}
+EOF
+
+# Const-qualified declarators sharing a statement
+try_ 6 << EOF
+const int cx = 2, cy = 3;
+int main()
+{
+    return cx * cy;
+}
+EOF
+
 # Category: Const Qualifiers
 begin_category "Const Qualifiers" "Testing const qualifier support for variables and parameters"
 
