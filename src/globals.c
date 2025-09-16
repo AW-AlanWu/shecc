@@ -431,27 +431,32 @@ hashmap_t *hashmap_create(int cap)
  *
  * Return: The pointer of created node.
  */
-hashmap_node_t *hashmap_node_new(char *key, void *val)
+hashmap_node_t *hashmap_node_new(char *key, void *val, bool copy_key)
 {
     if (!key)
         return NULL;
 
-    const int len = strlen(key);
     hashmap_node_t *node = arena_alloc(HASHMAP_ARENA, sizeof(hashmap_node_t));
-
 
     if (!node) {
         printf("Failed to allocate hashmap_node_t\n");
         return NULL;
     }
 
-    node->key = arena_alloc(HASHMAP_ARENA, len + 1);
-    if (!node->key) {
-        printf("Failed to allocate hashmap_node_t key with size %d\n", len + 1);
-        return NULL;
+    if (copy_key) {
+        const int len = strlen(key);
+        node->key = arena_alloc(HASHMAP_ARENA, len + 1);
+        if (!node->key) {
+            printf("Failed to allocate hashmap_node_t key with size %d\n",
+                   len + 1);
+            return NULL;
+        }
+
+        strcpy(node->key, key);
+    } else {
+        node->key = key;
     }
 
-    strcpy(node->key, key);
     node->val = val;
     node->next = NULL;
     return node;
@@ -500,6 +505,27 @@ void hashmap_rehash(hashmap_t *map)
     free(old_buckets);
 }
 
+void hashmap_append_node(hashmap_t *map, hashmap_node_t *node)
+{
+    if (!map || !node)
+        return;
+
+    int index = hashmap_hash_index(map->cap, node->key);
+    hashmap_node_t *cur = map->buckets[index];
+
+    if (!cur) {
+        map->buckets[index] = node;
+    } else {
+        while (cur->next)
+            cur = cur->next;
+        cur->next = node;
+    }
+
+    map->size++;
+    if ((map->cap >> 2) + (map->cap >> 1) <= map->size)
+        hashmap_rehash(map);
+}
+
 /* Put a key-value pair into given hashmap.
  * If key already contains a value, then replace it with new value, the old
  * value will be freed.
@@ -513,22 +539,17 @@ void hashmap_put(hashmap_t *map, char *key, void *val)
     if (!map)
         return;
 
-    int index = hashmap_hash_index(map->cap, key);
-    hashmap_node_t *cur = map->buckets[index],
-                   *new_node = hashmap_node_new(key, val);
+    hashmap_node_t *new_node = hashmap_node_new(key, val, true);
+    hashmap_append_node(map, new_node);
+}
 
-    if (!cur) {
-        map->buckets[index] = new_node;
-    } else {
-        while (cur->next)
-            cur = cur->next;
-        cur->next = new_node;
-    }
+void hashmap_put_existing_key(hashmap_t *map, char *key, void *val)
+{
+    if (!map)
+        return;
 
-    map->size++;
-    /* Check if size of map exceeds load factor 75% (or 3/4 of capacity) */
-    if ((map->cap >> 2) + (map->cap >> 1) <= map->size)
-        hashmap_rehash(map);
+    hashmap_node_t *new_node = hashmap_node_new(key, val, false);
+    hashmap_append_node(map, new_node);
 }
 
 /* Get key-value pair node from hashmap from given key.
@@ -685,7 +706,7 @@ void add_alias(char *alias, char *value)
         }
         /* Use interned string for alias name */
         strcpy(al->alias, intern_string(alias));
-        hashmap_put(ALIASES_MAP, alias, al);
+        hashmap_put_existing_key(ALIASES_MAP, al->alias, al);
     }
     strcpy(al->value, value);
     al->disabled = false;
@@ -720,7 +741,7 @@ macro_t *add_macro(char *name)
         }
         /* Use interned string for macro name */
         strcpy(ma->name, intern_string(name));
-        hashmap_put(MACROS_MAP, name, ma);
+        hashmap_put_existing_key(MACROS_MAP, ma->name, ma);
     }
     ma->disabled = false;
     return ma;
@@ -775,7 +796,7 @@ char *intern_string(char *str)
     interned = arena_alloc(GENERAL_ARENA, len);
     strcpy(interned, str);
 
-    hashmap_put(string_pool->strings, interned, interned);
+    hashmap_put_existing_key(string_pool->strings, interned, interned);
 
     return interned;
 }
@@ -824,7 +845,7 @@ void add_constant(char alias[], int value)
     /* Use interned string for constant name */
     strcpy(constant->alias, intern_string(alias));
     constant->value = value;
-    hashmap_put(CONSTANTS_MAP, alias, constant);
+    hashmap_put_existing_key(CONSTANTS_MAP, constant->alias, constant);
 }
 
 constant_t *find_constant(char alias[])
@@ -925,9 +946,10 @@ func_t *add_func(char *func_name, bool synthesize)
         return func;
 
     func = arena_alloc_func();
-    hashmap_put(FUNC_MAP, func_name, func);
     /* Use interned string for function name */
-    strcpy(func->return_def.var_name, intern_string(func_name));
+    char *interned_name = intern_string(func_name);
+    strcpy(func->return_def.var_name, interned_name);
+    hashmap_put_existing_key(FUNC_MAP, func->return_def.var_name, func);
     func->stack_size = 4;
 
     if (synthesize)
