@@ -488,7 +488,7 @@ struct insn {
     bool useful; /* Used in DCE process. Set true if instruction is useful. */
     basic_block_t *belong_to;
     phi_operand_t *phi_ops;
-    char str[64];
+    char *str;
 };
 
 typedef struct {

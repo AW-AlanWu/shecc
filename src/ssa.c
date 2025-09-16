@@ -1117,7 +1117,7 @@ void bb_dump(FILE *fd, func_t *func, basic_block_t *bb)
                         insn->rs1->subscript);
                 break;
             case OP_call:
-                sprintf(str, "<CALL @%s>", insn->str);
+                sprintf(str, "<CALL @%s>", insn->str ? insn->str : "");
                 break;
             case OP_indirect:
                 sprintf(str, "<INDIRECT CALL>");

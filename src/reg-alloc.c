@@ -759,6 +759,8 @@ void reg_alloc(void)
                     REGS[ir->dest].polluted = 0;
                     break;
                 case OP_call:
+                    if (!insn->str)
+                        fatal("Call instruction missing callee name");
                     callee_func = find_func(insn->str);
                     if (!callee_func->num_params)
                         spill_alive(bb, insn);

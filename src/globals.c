@@ -1090,11 +1090,12 @@ void add_insn(block_t *block,
     n->belong_to = bb;
     n->phi_ops = NULL;
     n->idx = 0;
+    n->str = NULL;
 
-    if (str)
-        strcpy(n->str, intern_string(str));
-    else
-        n->str[0] = '\0';
+    if (str && str[0]) {
+        char *interned = intern_string(str);
+        n->str = arena_strdup(INSN_ARENA, interned);
+    }
 
     /* Mark variables as address-taken to prevent incorrect constant
      * optimization
@@ -1486,7 +1487,7 @@ void dump_bb_insn(func_t *func, basic_block_t *bb, bool *at_func_start)
             break;
         case OP_call:
             print_indent(1);
-            printf("call @%s", insn->str);
+            printf("call @%s", insn->str ? insn->str : "");
             break;
         case OP_func_ret:
             print_indent(1);
