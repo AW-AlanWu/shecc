@@ -1643,11 +1643,8 @@ void dump_bb_insn(func_t *func, basic_block_t *bb, bool *at_func_start)
 void dump_bb_insn_by_dom(func_t *func, basic_block_t *bb, bool *at_func_start)
 {
     dump_bb_insn(func, bb, at_func_start);
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        dump_bb_insn_by_dom(func, bb->dom_next[i], at_func_start);
-    }
+    for (int i = 0; i < bb->dom_next.count; i++)
+        dump_bb_insn_by_dom(func, bb->dom_next.data[i], at_func_start);
 }
 
 void dump_insn(void)
