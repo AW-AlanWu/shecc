@@ -98,9 +98,9 @@ typedef struct {
 /* string-based hash map definitions */
 
 typedef struct hashmap_node {
-    char *key;
-    void *val;
     struct hashmap_node *next;
+    void *val;
+    char *key;
 } hashmap_node_t;
 
 typedef struct {
