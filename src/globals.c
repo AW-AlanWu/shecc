@@ -957,7 +957,7 @@ func_t *find_func(char *func_name)
 /* Create a basic block and set the scope of variables to 'parent' block */
 basic_block_t *bb_create(block_t *parent)
 {
-    /* Use arena_calloc for basic_block_t as it has many arrays that need
+    /* Use arena_calloc for basic_block_t as it has many lists/arrays that need
      * zeroing (live_gen, live_kill, live_in, live_out, DF, RDF, dom_next, etc.)
      * This is simpler and safer than manually initializing everything.
      */
@@ -1113,6 +1113,18 @@ void add_insn(block_t *block,
     bb->insn_list.tail = n;
 }
 
+int strbuf_initial_capacity(int hint)
+{
+    const int min_initial = 64;
+    const int max_initial = 16384;
+
+    if (hint <= 0)
+        return min_initial;
+    if (hint > max_initial)
+        return max_initial;
+    return hint;
+}
+
 strbuf_t *strbuf_create(int init_capacity)
 {
     strbuf_t *array = malloc(sizeof(strbuf_t));
@@ -1120,37 +1132,64 @@ strbuf_t *strbuf_create(int init_capacity)
         return NULL;
 
     array->size = 0;
-    array->capacity = init_capacity;
-    array->elements = malloc(array->capacity * sizeof(char));
+    array->capacity = strbuf_initial_capacity(init_capacity);
+    array->elements = malloc(array->capacity);
     if (!array->elements) {
         free(array);
         return NULL;
     }
+
+    array->elements[0] = 0;
 
     return array;
 }
 
 bool strbuf_extend(strbuf_t *src, int len)
 {
-    int new_size = src->size + len;
+    if (len < 0)
+        return false;
 
-    if (new_size < src->capacity)
+    if (len > 0x7fffffff - src->size - 1)
+        return false;
+
+    int required = src->size + len + 1;
+
+    if (required <= src->capacity)
         return true;
 
-    if (new_size > src->capacity << 1)
-        src->capacity = new_size;
-    else
-        src->capacity <<= 1;
+    int new_capacity = src->capacity;
 
-    char *new_arr = malloc(src->capacity * sizeof(char));
+    if (new_capacity == 0)
+        new_capacity = strbuf_initial_capacity(len);
+
+    while (required > new_capacity) {
+        if (new_capacity >= 0x7fffffff / 2) {
+            new_capacity = required;
+            break;
+        }
+
+        int doubled = new_capacity << 1;
+
+        if (required > doubled) {
+            new_capacity = required;
+            break;
+        }
+
+        new_capacity = doubled;
+    }
+
+    char *new_arr = malloc(new_capacity);
 
     if (!new_arr)
         return false;
 
-    memcpy(new_arr, src->elements, src->size * sizeof(char));
-
+    memcpy(new_arr, src->elements, src->size);
     free(src->elements);
     src->elements = new_arr;
+    src->capacity = new_capacity;
+
+    if (src->size < src->capacity)
+        src->elements[src->size] = 0;
 
     return true;
 }
@@ -1163,6 +1202,9 @@ bool strbuf_putc(strbuf_t *src, char value)
     src->elements[src->size] = value;
     src->size++;
 
+    if (src->size < src->capacity)
+        src->elements[src->size] = 0;
+
     return true;
 }
 
@@ -1173,8 +1215,11 @@ bool strbuf_puts(strbuf_t *src, const char *value)
     if (!strbuf_extend(src, len))
         return false;
 
-    strncpy(src->elements + src->size, value, len);
+    memcpy(src->elements + src->size, value, len);
     src->size += len;
+
+    if (src->size < src->capacity)
+        src->elements[src->size] = 0;
 
     return true;
 }
