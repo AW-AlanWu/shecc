@@ -21,6 +21,100 @@
 /* Dead store elimination window size */
 #define OVERWRITE_WINDOW 3
 
+int ssa_vector_grow_capacity(int current, int needed)
+{
+    int new_cap = current ? current : 4;
+
+    while (new_cap < needed)
+        new_cap <<= 1;
+
+    return new_cap;
+}
+
+void ssa_var_vector_reserve(var_vector_t *vec, int needed)
+{
+    if (vec->capacity >= needed)
+        return;
+
+    int new_cap = ssa_vector_grow_capacity(vec->capacity, needed);
+
+    if (vec->data) {
+        vec->data = arena_realloc(BB_ARENA, (char *) vec->data,
+                                  vec->capacity * (int) sizeof(var_t *),
+                                  new_cap * (int) sizeof(var_t *));
+    } else {
+        vec->data = arena_alloc(BB_ARENA, new_cap * (int) sizeof(var_t *));
+    }
+
+    vec->capacity = new_cap;
+}
+
+void ssa_bb_vector_reserve(bb_vector_t *vec, int needed)
+{
+    if (vec->capacity >= needed)
+        return;
+
+    int new_cap = ssa_vector_grow_capacity(vec->capacity, needed);
+
+    if (vec->data) {
+        vec->data = arena_realloc(BB_ARENA, (char *) vec->data,
+                                  vec->capacity * (int) sizeof(basic_block_t *),
+                                  new_cap * (int) sizeof(basic_block_t *));
+    } else {
+        vec->data =
+            arena_alloc(BB_ARENA, new_cap * (int) sizeof(basic_block_t *));
+    }
+
+    vec->capacity = new_cap;
+}
+
+void ssa_var_vector_clear(var_vector_t *vec)
+{
+    vec->count = 0;
+}
+
+bool ssa_var_vector_contains(const var_vector_t *vec, var_t *var)
+{
+    for (int i = 0; i < vec->count; i++) {
+        if (vec->data[i] == var)
+            return true;
+    }
+
+    return false;
+}
+
+void ssa_var_vector_push_unique(var_vector_t *vec, var_t *var)
+{
+    if (ssa_var_vector_contains(vec, var))
+        return;
+
+    ssa_var_vector_reserve(vec, vec->count + 1);
+    vec->data[vec->count++] = var;
+}
+
+void ssa_var_vector_assign_array(var_vector_t *vec, var_t **src, int count)
+{
+    ssa_var_vector_reserve(vec, count);
+    memcpy(vec->data, src, count * sizeof(var_t *));
+    vec->count = count;
+}
+
+void ssa_bb_vector_push_unique(bb_vector_t *vec, basic_block_t *bb)
+{
+    for (int i = 0; i < vec->count; i++) {
+        if (vec->data[i] == bb)
+            return;
+    }
+
+    ssa_bb_vector_reserve(vec, vec->count + 1);
+    vec->data[vec->count++] = bb;
+}
+
+void ssa_bb_vector_clear(bb_vector_t *vec)
+{
+    vec->count = 0;
+}
+
 /* cfront does not accept structure as an argument, pass pointer */
 void bb_forward_traversal(bb_traversal_args_t *args)
 {
@@ -208,18 +302,7 @@ bool dom_connect(basic_block_t *pred, basic_block_t *succ)
     if (succ->dom_prev)
         return false;
 
-    int i;
-    for (i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (pred->dom_next[i] == succ)
-            return false;
-        if (!pred->dom_next[i])
-            break;
-    }
-
-    if (i > MAX_BB_DOM_SUCC - 1)
-        fatal("Too many predecessors in dominator tree");
-
-    pred->dom_next[i++] = succ;
+    ssa_bb_vector_push_unique(&pred->dom_next, succ);
     succ->dom_prev = pred;
     return true;
 }
@@ -267,7 +350,7 @@ void bb_build_df(func_t *func, basic_block_t *bb)
         if (bb->prev[i].bb) {
             for (basic_block_t *curr = bb->prev[i].bb; curr != bb->idom;
                  curr = curr->idom)
-                curr->DF[curr->df_idx++] = bb;
+                ssa_bb_vector_push_unique(&curr->DF, bb);
         }
     }
 }
@@ -346,18 +429,7 @@ bool rdom_connect(basic_block_t *pred, basic_block_t *succ)
     if (succ->rdom_prev)
         return false;
 
-    int i;
-    for (i = 0; i < MAX_BB_RDOM_SUCC; i++) {
-        if (pred->rdom_next[i] == succ)
-            return false;
-        if (!pred->rdom_next[i])
-            break;
-    }
-
-    if (i > MAX_BB_RDOM_SUCC - 1)
-        fatal("Too many predecessors in reverse dominator tree");
-
-    pred->rdom_next[i++] = succ;
+    ssa_bb_vector_push_unique(&pred->rdom_next, succ);
     succ->rdom_prev = pred;
     return true;
 }
@@ -404,17 +476,17 @@ void bb_build_rdf(func_t *func, basic_block_t *bb)
     if (bb->next) {
         for (basic_block_t *curr = bb->next; curr != bb->r_idom;
              curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+            ssa_bb_vector_push_unique(&curr->RDF, bb);
     }
     if (bb->else_) {
         for (basic_block_t *curr = bb->else_; curr != bb->r_idom;
              curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+            ssa_bb_vector_push_unique(&curr->RDF, bb);
     }
     if (bb->then_) {
         for (basic_block_t *curr = bb->then_; curr != bb->r_idom;
              curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+            ssa_bb_vector_push_unique(&curr->RDF, bb);
     }
 }
 
@@ -484,26 +556,12 @@ void use_chain_build(void)
 
 bool var_check_killed(var_t *var, basic_block_t *bb)
 {
-    for (int i = 0; i < bb->live_kill_idx; i++) {
-        if (bb->live_kill[i] == var)
-            return true;
-    }
-    return false;
+    return ssa_var_vector_contains(&bb->live_kill, var);
 }
 
 void bb_add_killed_var(basic_block_t *bb, var_t *var)
 {
-    bool found = false;
-    for (int i = 0; i < bb->live_kill_idx; i++) {
-        if (bb->live_kill[i] == var) {
-            found = true;
-            break;
-        }
-    }
-    if (found)
-        return;
-
-    bb->live_kill[bb->live_kill_idx++] = var;
+    ssa_var_vector_push_unique(&bb->live_kill, var);
 }
 
 void var_add_killed_bb(var_t *var, basic_block_t *bb)
@@ -661,8 +719,8 @@ void solve_phi_insertion(void)
 
             for (int i = 0; i < work_list_idx; i++) {
                 basic_block_t *bb = work_list[i];
-                for (int j = 0; j < bb->df_idx; j++) {
-                    basic_block_t *df = bb->DF[j];
+                for (int j = 0; j < bb->DF.count; j++) {
+                    basic_block_t *df = bb->DF.data[j];
                     if (!var_check_in_scope(var, df->scope))
                         continue;
 
@@ -821,11 +879,8 @@ void bb_solve_phi_params(basic_block_t *bb)
         }
     }
 
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        bb_solve_phi_params(bb->dom_next[i]);
-    }
+    for (int i = 0; i < bb->dom_next.count; i++)
+        bb_solve_phi_params(bb->dom_next.data[i]);
 
     for (insn_t *insn = bb->insn_list.head; insn; insn = insn->next) {
         if (insn->opcode == OP_phi)
@@ -1243,11 +1298,10 @@ void dump_cfg(char name[])
 void dom_dump(FILE *fd, basic_block_t *bb)
 {
     fprintf(fd, "\"%p\"\n", bb);
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        dom_dump(fd, bb->dom_next[i]);
-        fprintf(fd, "\"%p\":s->\"%p\":n\n", bb, bb->dom_next[i]);
+    for (int i = 0; i < bb->dom_next.count; i++) {
+        basic_block_t *child = bb->dom_next.data[i];
+        dom_dump(fd, child);
+        fprintf(fd, "\"%p\":s->\"%p\":n\n", bb, child);
     }
 }
 
@@ -1773,8 +1827,8 @@ void dce_insn(basic_block_t *bb)
         }
 
         basic_block_t *rdf;
-        for (int i = 0; i < curr->belong_to->rdf_idx; i++) {
-            rdf = curr->belong_to->RDF[i];
+        for (int i = 0; i < curr->belong_to->RDF.count; i++) {
+            rdf = curr->belong_to->RDF.data[i];
             if (!rdf)
                 break;
             insn_t *tail = rdf->insn_list.tail;
@@ -2390,7 +2444,7 @@ void build_reversed_rpo(void)
 void bb_reset_live_kill_idx(func_t *func, basic_block_t *bb)
 {
     UNUSED(func);
-    bb->live_kill_idx = 0;
+    ssa_var_vector_clear(&bb->live_kill);
 }
 
 void add_live_gen(basic_block_t *bb, var_t *var);
@@ -2402,7 +2456,7 @@ void bb_reset_and_solve_locals(func_t *func, basic_block_t *bb)
     UNUSED(func);
 
     /* Reset live_kill index */
-    bb->live_kill_idx = 0;
+    ssa_var_vector_clear(&bb->live_kill);
 
     /* Solve locals */
     int i = 0;
@@ -2429,11 +2483,7 @@ void add_live_gen(basic_block_t *bb, var_t *var)
     if (var->is_global)
         return;
 
-    for (int i = 0; i < bb->live_gen_idx; i++) {
-        if (bb->live_gen[i] == var)
-            return;
-    }
-    bb->live_gen[bb->live_gen_idx++] = var;
+    ssa_var_vector_push_unique(&bb->live_gen, var);
 }
 
 void update_consumed(insn_t *insn, var_t *var)
@@ -2468,51 +2518,48 @@ void bb_solve_locals(func_t *func, basic_block_t *bb)
 
 void add_live_in(basic_block_t *bb, var_t *var)
 {
-    for (int i = 0; i < bb->live_in_idx; i++) {
-        if (bb->live_in[i] == var)
-            return;
-    }
-    bb->live_in[bb->live_in_idx++] = var;
+    ssa_var_vector_push_unique(&bb->live_in, var);
 }
 
 void compute_live_in(basic_block_t *bb)
 {
-    bb->live_in_idx = 0;
+    ssa_var_vector_clear(&bb->live_in);
 
-    for (int i = 0; i < bb->live_out_idx; i++) {
-        if (var_check_killed(bb->live_out[i], bb))
+    for (int i = 0; i < bb->live_out.count; i++) {
+        if (var_check_killed(bb->live_out.data[i], bb))
             continue;
-        add_live_in(bb, bb->live_out[i]);
+        add_live_in(bb, bb->live_out.data[i]);
     }
-    for (int i = 0; i < bb->live_gen_idx; i++)
-        add_live_in(bb, bb->live_gen[i]);
+    for (int i = 0; i < bb->live_gen.count; i++)
+        add_live_in(bb, bb->live_gen.data[i]);
 }
 
 int merge_live_in(var_t *live_out[], int live_out_idx, basic_block_t *bb)
 {
     /* Early exit for empty live_in */
-    if (bb->live_in_idx == 0)
+    if (bb->live_in.count == 0)
         return live_out_idx;
 
     /* Optimize for common case of small sets */
     if (live_out_idx < 16) {
         /* For small sets, simple linear search is fast enough */
-        for (int i = 0; i < bb->live_in_idx; i++) {
+        for (int i = 0; i < bb->live_in.count; i++) {
             bool found = false;
+            var_t *candidate = bb->live_in.data[i];
             for (int j = 0; j < live_out_idx; j++) {
-                if (live_out[j] == bb->live_in[i]) {
+                if (live_out[j] == candidate) {
                     found = true;
                     break;
                 }
             }
             if (!found && live_out_idx < MAX_ANALYSIS_STACK_SIZE)
-                live_out[live_out_idx++] = bb->live_in[i];
+                live_out[live_out_idx++] = candidate;
         }
     } else {
         /* For larger sets, check bounds and use optimized loop */
-        for (int i = 0; i < bb->live_in_idx; i++) {
+        for (int i = 0; i < bb->live_in.count; i++) {
             bool found = false;
-            var_t *var = bb->live_in[i];
+            var_t *var = bb->live_in.data[i];
             /* Unroll inner loop for better performance */
             int j;
             for (j = 0; j + 3 < live_out_idx; j += 4) {
@@ -2558,42 +2605,36 @@ bool recompute_live_out(basic_block_t *bb)
     }
 
     /* Quick check: if sizes differ, sets must be different */
-    if (bb->live_out_idx != live_out_idx) {
-        memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-        bb->live_out_idx = live_out_idx;
+    if (bb->live_out.count != live_out_idx) {
+        ssa_var_vector_assign_array(&bb->live_out, live_out, live_out_idx);
         return true;
     }
 
     /* Size is same, need to check if contents are identical */
-    /* Optimize by checking if first few elements match (common case) */
     if (live_out_idx > 0) {
-        /* Quick check first element */
         bool first_found = false;
-        for (int j = 0; j < bb->live_out_idx; j++) {
-            if (live_out[0] == bb->live_out[j]) {
+        for (int j = 0; j < bb->live_out.count; j++) {
+            if (live_out[0] == bb->live_out.data[j]) {
                 first_found = true;
                 break;
             }
         }
         if (!first_found) {
-            memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-            bb->live_out_idx = live_out_idx;
+            ssa_var_vector_assign_array(&bb->live_out, live_out, live_out_idx);
             return true;
         }
     }
 
-    /* Full comparison */
     for (int i = 0; i < live_out_idx; i++) {
-        int same = 0;
-        for (int j = 0; j < bb->live_out_idx; j++) {
-            if (live_out[i] == bb->live_out[j]) {
-                same = 1;
+        bool same = false;
+        for (int j = 0; j < bb->live_out.count; j++) {
+            if (live_out[i] == bb->live_out.data[j]) {
+                same = true;
                 break;
             }
         }
         if (!same) {
-            memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-            bb->live_out_idx = live_out_idx;
+            ssa_var_vector_assign_array(&bb->live_out, live_out, live_out_idx);
             return true;
         }
     }
