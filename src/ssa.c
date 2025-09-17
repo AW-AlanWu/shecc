@@ -208,18 +208,13 @@ bool dom_connect(basic_block_t *pred, basic_block_t *succ)
     if (succ->dom_prev)
         return false;
 
-    int i;
-    for (i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (pred->dom_next[i] == succ)
-            return false;
-        if (!pred->dom_next[i])
-            break;
-    }
+    if (bb_vec_contains(&pred->dom_next, succ))
+        return false;
 
-    if (i > MAX_BB_DOM_SUCC - 1)
+    if (pred->dom_next.size >= MAX_BB_DOM_SUCC)
         fatal("Too many predecessors in dominator tree");
 
-    pred->dom_next[i++] = succ;
+    bb_vec_push(&pred->dom_next, succ);
     succ->dom_prev = pred;
     return true;
 }
@@ -266,8 +261,13 @@ void bb_build_df(func_t *func, basic_block_t *bb)
     for (int i = 0; i < MAX_BB_PRED; i++) {
         if (bb->prev[i].bb) {
             for (basic_block_t *curr = bb->prev[i].bb; curr != bb->idom;
-                 curr = curr->idom)
-                curr->DF[curr->df_idx++] = bb;
+                 curr = curr->idom) {
+                if (!bb_vec_contains(&curr->DF, bb)) {
+                    if (curr->DF.size >= 64)
+                        fatal("DF overflow");
+                    bb_vec_push(&curr->DF, bb);
+                }
+            }
         }
     }
 }
@@ -346,18 +346,13 @@ bool rdom_connect(basic_block_t *pred, basic_block_t *succ)
     if (succ->rdom_prev)
         return false;
 
-    int i;
-    for (i = 0; i < MAX_BB_RDOM_SUCC; i++) {
-        if (pred->rdom_next[i] == succ)
-            return false;
-        if (!pred->rdom_next[i])
-            break;
-    }
+    if (bb_vec_contains(&pred->rdom_next, succ))
+        return false;
 
-    if (i > MAX_BB_RDOM_SUCC - 1)
+    if (pred->rdom_next.size >= MAX_BB_RDOM_SUCC)
         fatal("Too many predecessors in reverse dominator tree");
 
-    pred->rdom_next[i++] = succ;
+    bb_vec_push(&pred->rdom_next, succ);
     succ->rdom_prev = pred;
     return true;
 }
@@ -403,18 +398,33 @@ void bb_build_rdf(func_t *func, basic_block_t *bb)
 
     if (bb->next) {
         for (basic_block_t *curr = bb->next; curr != bb->r_idom;
-             curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+             curr = curr->r_idom) {
+            if (!bb_vec_contains(&curr->RDF, bb)) {
+                if (curr->RDF.size >= 64)
+                    fatal("RDF overflow");
+                bb_vec_push(&curr->RDF, bb);
+            }
+        }
     }
     if (bb->else_) {
         for (basic_block_t *curr = bb->else_; curr != bb->r_idom;
-             curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+             curr = curr->r_idom) {
+            if (!bb_vec_contains(&curr->RDF, bb)) {
+                if (curr->RDF.size >= 64)
+                    fatal("RDF overflow");
+                bb_vec_push(&curr->RDF, bb);
+            }
+        }
     }
     if (bb->then_) {
         for (basic_block_t *curr = bb->then_; curr != bb->r_idom;
-             curr = curr->r_idom)
-            curr->RDF[curr->rdf_idx++] = bb;
+             curr = curr->r_idom) {
+            if (!bb_vec_contains(&curr->RDF, bb)) {
+                if (curr->RDF.size >= 64)
+                    fatal("RDF overflow");
+                bb_vec_push(&curr->RDF, bb);
+            }
+        }
     }
 }
 
@@ -484,8 +494,8 @@ void use_chain_build(void)
 
 bool var_check_killed(var_t *var, basic_block_t *bb)
 {
-    for (int i = 0; i < bb->live_kill_idx; i++) {
-        if (bb->live_kill[i] == var)
+    for (int i = 0; i < bb->live_kill.size; i++) {
+        if (bb->live_kill.items[i] == var)
             return true;
     }
     return false;
@@ -493,17 +503,10 @@ bool var_check_killed(var_t *var, basic_block_t *bb)
 
 void bb_add_killed_var(basic_block_t *bb, var_t *var)
 {
-    bool found = false;
-    for (int i = 0; i < bb->live_kill_idx; i++) {
-        if (bb->live_kill[i] == var) {
-            found = true;
-            break;
-        }
-    }
-    if (found)
+    if (var_vec_contains(&bb->live_kill, var))
         return;
 
-    bb->live_kill[bb->live_kill_idx++] = var;
+    var_vec_push(&bb->live_kill, var);
 }
 
 void var_add_killed_bb(var_t *var, basic_block_t *bb)
@@ -661,8 +664,8 @@ void solve_phi_insertion(void)
 
             for (int i = 0; i < work_list_idx; i++) {
                 basic_block_t *bb = work_list[i];
-                for (int j = 0; j < bb->df_idx; j++) {
-                    basic_block_t *df = bb->DF[j];
+                for (int j = 0; j < bb->DF.size; j++) {
+                    basic_block_t *df = bb->DF.items[j];
                     if (!var_check_in_scope(var, df->scope))
                         continue;
 
@@ -821,11 +824,8 @@ void bb_solve_phi_params(basic_block_t *bb)
         }
     }
 
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        bb_solve_phi_params(bb->dom_next[i]);
-    }
+    for (int i = 0; i < bb->dom_next.size; i++)
+        bb_solve_phi_params(bb->dom_next.items[i]);
 
     for (insn_t *insn = bb->insn_list.head; insn; insn = insn->next) {
         if (insn->opcode == OP_phi)
@@ -1243,11 +1243,10 @@ void dump_cfg(char name[])
 void dom_dump(FILE *fd, basic_block_t *bb)
 {
     fprintf(fd, "\"%p\"\n", bb);
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        dom_dump(fd, bb->dom_next[i]);
-        fprintf(fd, "\"%p\":s->\"%p\":n\n", bb, bb->dom_next[i]);
+    for (int i = 0; i < bb->dom_next.size; i++) {
+        basic_block_t *succ = bb->dom_next.items[i];
+        dom_dump(fd, succ);
+        fprintf(fd, "\"%p\":s->\"%p\":n\n", bb, succ);
     }
 }
 
@@ -1773,10 +1772,10 @@ void dce_insn(basic_block_t *bb)
         }
 
         basic_block_t *rdf;
-        for (int i = 0; i < curr->belong_to->rdf_idx; i++) {
-            rdf = curr->belong_to->RDF[i];
+        for (int i = 0; i < curr->belong_to->RDF.size; i++) {
+            rdf = curr->belong_to->RDF.items[i];
             if (!rdf)
-                break;
+                continue;
             insn_t *tail = rdf->insn_list.tail;
             if (tail && tail->opcode == OP_branch && !tail->useful) {
                 tail->useful = true;
@@ -2390,7 +2389,7 @@ void build_reversed_rpo(void)
 void bb_reset_live_kill_idx(func_t *func, basic_block_t *bb)
 {
     UNUSED(func);
-    bb->live_kill_idx = 0;
+    var_vec_clear(&bb->live_kill);
 }
 
 void add_live_gen(basic_block_t *bb, var_t *var);
@@ -2402,7 +2401,7 @@ void bb_reset_and_solve_locals(func_t *func, basic_block_t *bb)
     UNUSED(func);
 
     /* Reset live_kill index */
-    bb->live_kill_idx = 0;
+    var_vec_clear(&bb->live_kill);
 
     /* Solve locals */
     int i = 0;
@@ -2429,11 +2428,10 @@ void add_live_gen(basic_block_t *bb, var_t *var)
     if (var->is_global)
         return;
 
-    for (int i = 0; i < bb->live_gen_idx; i++) {
-        if (bb->live_gen[i] == var)
-            return;
-    }
-    bb->live_gen[bb->live_gen_idx++] = var;
+    if (var_vec_contains(&bb->live_gen, var))
+        return;
+
+    var_vec_push(&bb->live_gen, var);
 }
 
 void update_consumed(insn_t *insn, var_t *var)
@@ -2468,51 +2466,51 @@ void bb_solve_locals(func_t *func, basic_block_t *bb)
 
 void add_live_in(basic_block_t *bb, var_t *var)
 {
-    for (int i = 0; i < bb->live_in_idx; i++) {
-        if (bb->live_in[i] == var)
-            return;
-    }
-    bb->live_in[bb->live_in_idx++] = var;
+    if (var_vec_contains(&bb->live_in, var))
+        return;
+
+    var_vec_push(&bb->live_in, var);
 }
 
 void compute_live_in(basic_block_t *bb)
 {
-    bb->live_in_idx = 0;
+    var_vec_clear(&bb->live_in);
 
-    for (int i = 0; i < bb->live_out_idx; i++) {
-        if (var_check_killed(bb->live_out[i], bb))
+    for (int i = 0; i < bb->live_out.size; i++) {
+        if (var_check_killed(bb->live_out.items[i], bb))
             continue;
-        add_live_in(bb, bb->live_out[i]);
+        add_live_in(bb, bb->live_out.items[i]);
     }
-    for (int i = 0; i < bb->live_gen_idx; i++)
-        add_live_in(bb, bb->live_gen[i]);
+    for (int i = 0; i < bb->live_gen.size; i++)
+        add_live_in(bb, bb->live_gen.items[i]);
 }
 
 int merge_live_in(var_t *live_out[], int live_out_idx, basic_block_t *bb)
 {
     /* Early exit for empty live_in */
-    if (bb->live_in_idx == 0)
+    if (bb->live_in.size == 0)
         return live_out_idx;
 
     /* Optimize for common case of small sets */
     if (live_out_idx < 16) {
         /* For small sets, simple linear search is fast enough */
-        for (int i = 0; i < bb->live_in_idx; i++) {
+        for (int i = 0; i < bb->live_in.size; i++) {
             bool found = false;
+            var_t *in_var = bb->live_in.items[i];
             for (int j = 0; j < live_out_idx; j++) {
-                if (live_out[j] == bb->live_in[i]) {
+                if (live_out[j] == in_var) {
                     found = true;
                     break;
                 }
             }
             if (!found && live_out_idx < MAX_ANALYSIS_STACK_SIZE)
-                live_out[live_out_idx++] = bb->live_in[i];
+                live_out[live_out_idx++] = in_var;
         }
     } else {
         /* For larger sets, check bounds and use optimized loop */
-        for (int i = 0; i < bb->live_in_idx; i++) {
+        for (int i = 0; i < bb->live_in.size; i++) {
             bool found = false;
-            var_t *var = bb->live_in[i];
+            var_t *var = bb->live_in.items[i];
             /* Unroll inner loop for better performance */
             int j;
             for (j = 0; j + 3 < live_out_idx; j += 4) {
@@ -2557,43 +2555,35 @@ bool recompute_live_out(basic_block_t *bb)
         live_out_idx = merge_live_in(live_out, live_out_idx, bb->else_);
     }
 
-    /* Quick check: if sizes differ, sets must be different */
-    if (bb->live_out_idx != live_out_idx) {
-        memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-        bb->live_out_idx = live_out_idx;
+    if (bb->live_out.size != live_out_idx) {
+        var_vec_assign(&bb->live_out, live_out, live_out_idx);
         return true;
     }
 
-    /* Size is same, need to check if contents are identical */
-    /* Optimize by checking if first few elements match (common case) */
     if (live_out_idx > 0) {
-        /* Quick check first element */
         bool first_found = false;
-        for (int j = 0; j < bb->live_out_idx; j++) {
-            if (live_out[0] == bb->live_out[j]) {
+        for (int j = 0; j < bb->live_out.size; j++) {
+            if (live_out[0] == bb->live_out.items[j]) {
                 first_found = true;
                 break;
             }
         }
         if (!first_found) {
-            memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-            bb->live_out_idx = live_out_idx;
+            var_vec_assign(&bb->live_out, live_out, live_out_idx);
             return true;
         }
     }
 
-    /* Full comparison */
     for (int i = 0; i < live_out_idx; i++) {
-        int same = 0;
-        for (int j = 0; j < bb->live_out_idx; j++) {
-            if (live_out[i] == bb->live_out[j]) {
-                same = 1;
+        bool found = false;
+        for (int j = 0; j < bb->live_out.size; j++) {
+            if (live_out[i] == bb->live_out.items[j]) {
+                found = true;
                 break;
             }
         }
-        if (!same) {
-            memcpy(bb->live_out, live_out, HOST_PTR_SIZE * live_out_idx);
-            bb->live_out_idx = live_out_idx;
+        if (!found) {
+            var_vec_assign(&bb->live_out, live_out, live_out_idx);
             return true;
         }
     }

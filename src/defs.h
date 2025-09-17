@@ -409,6 +409,18 @@ struct block {
 typedef struct block block_t;
 typedef struct basic_block basic_block_t;
 
+typedef struct {
+    var_t **items;
+    int size;
+    int capacity;
+} var_ptr_vec_t;
+
+typedef struct {
+    basic_block_t **items;
+    int size;
+    int capacity;
+} bb_ptr_vec_t;
+
 /* Definition of a growable buffer for a mutable null-terminated string
  * @size:     Current number of elements in the array
  * @capacity: Number of elements that can be stored without resizing
@@ -531,25 +543,19 @@ struct basic_block {
     struct basic_block *r_idom;
     struct basic_block *rpo_next;
     struct basic_block *rpo_r_next;
-    var_t *live_gen[MAX_ANALYSIS_STACK_SIZE];
-    int live_gen_idx;
-    var_t *live_kill[MAX_ANALYSIS_STACK_SIZE];
-    int live_kill_idx;
-    var_t *live_in[MAX_ANALYSIS_STACK_SIZE];
-    int live_in_idx;
-    var_t *live_out[MAX_ANALYSIS_STACK_SIZE];
-    int live_out_idx;
+    var_ptr_vec_t live_gen;
+    var_ptr_vec_t live_kill;
+    var_ptr_vec_t live_in;
+    var_ptr_vec_t live_out;
     int rpo;
     int rpo_r;
-    struct basic_block *DF[64];
-    struct basic_block *RDF[64];
-    int df_idx;
-    int rdf_idx;
+    bb_ptr_vec_t DF;
+    bb_ptr_vec_t RDF;
     int visited;
     bool useful; /* indicate whether this BB contains useful instructions */
-    struct basic_block *dom_next[64];
+    bb_ptr_vec_t dom_next;
     struct basic_block *dom_prev;
-    struct basic_block *rdom_next[256];
+    bb_ptr_vec_t rdom_next;
     struct basic_block *rdom_prev;
     func_t *belong_to;
     block_t *scope;

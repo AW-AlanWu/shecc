@@ -954,6 +954,102 @@ func_t *find_func(char *func_name)
     return hashmap_get(FUNC_MAP, func_name);
 }
 
+void var_vec_init(var_ptr_vec_t *vec)
+{
+    vec->items = NULL;
+    vec->size = 0;
+    vec->capacity = 0;
+}
+
+void var_vec_reserve(var_ptr_vec_t *vec, int needed)
+{
+    if (vec->capacity >= needed)
+        return;
+
+    int new_cap = vec->capacity ? vec->capacity : 8;
+    while (new_cap < needed)
+        new_cap <<= 1;
+
+    var_t **items = arena_alloc(BB_ARENA, new_cap * sizeof(var_t *));
+    if (vec->items && vec->size > 0)
+        memcpy(items, vec->items, vec->size * sizeof(var_t *));
+
+    vec->items = items;
+    vec->capacity = new_cap;
+}
+
+void var_vec_clear(var_ptr_vec_t *vec)
+{
+    vec->size = 0;
+}
+
+bool var_vec_contains(const var_ptr_vec_t *vec, var_t *var)
+{
+    for (int i = 0; i < vec->size; i++) {
+        if (vec->items[i] == var)
+            return true;
+    }
+    return false;
+}
+
+void var_vec_push(var_ptr_vec_t *vec, var_t *var)
+{
+    var_vec_reserve(vec, vec->size + 1);
+    vec->items[vec->size++] = var;
+}
+
+void var_vec_assign(var_ptr_vec_t *vec, var_t **items, int count)
+{
+    if (count <= 0) {
+        vec->size = 0;
+        return;
+    }
+
+    var_vec_reserve(vec, count);
+    memcpy(vec->items, items, sizeof(var_t *) * count);
+    vec->size = count;
+}
+
+void bb_vec_init(bb_ptr_vec_t *vec)
+{
+    vec->items = NULL;
+    vec->size = 0;
+    vec->capacity = 0;
+}
+
+void bb_vec_reserve(bb_ptr_vec_t *vec, int needed)
+{
+    if (vec->capacity >= needed)
+        return;
+
+    int new_cap = vec->capacity ? vec->capacity : 4;
+    while (new_cap < needed)
+        new_cap <<= 1;
+
+    basic_block_t **items =
+        arena_alloc(BB_ARENA, new_cap * sizeof(basic_block_t *));
+    if (vec->items && vec->size > 0)
+        memcpy(items, vec->items, vec->size * sizeof(basic_block_t *));
+
+    vec->items = items;
+    vec->capacity = new_cap;
+}
+
+bool bb_vec_contains(const bb_ptr_vec_t *vec, basic_block_t *bb)
+{
+    for (int i = 0; i < vec->size; i++) {
+        if (vec->items[i] == bb)
+            return true;
+    }
+    return false;
+}
+
+void bb_vec_push(bb_ptr_vec_t *vec, basic_block_t *bb)
+{
+    bb_vec_reserve(vec, vec->size + 1);
+    vec->items[vec->size++] = bb;
+}
+
 /* Create a basic block and set the scope of variables to 'parent' block */
 basic_block_t *bb_create(block_t *parent)
 {
@@ -966,6 +1062,14 @@ basic_block_t *bb_create(block_t *parent)
     /* Initialize non-zero fields */
     bb->scope = parent;
     bb->belong_to = parent->func;
+    var_vec_init(&bb->live_gen);
+    var_vec_init(&bb->live_kill);
+    var_vec_init(&bb->live_in);
+    var_vec_init(&bb->live_out);
+    bb_vec_init(&bb->DF);
+    bb_vec_init(&bb->RDF);
+    bb_vec_init(&bb->dom_next);
+    bb_vec_init(&bb->rdom_next);
 
     /* Initialize prev array with NEXT type */
     for (int i = 0; i < MAX_BB_PRED; i++)
@@ -1643,11 +1747,8 @@ void dump_bb_insn(func_t *func, basic_block_t *bb, bool *at_func_start)
 void dump_bb_insn_by_dom(func_t *func, basic_block_t *bb, bool *at_func_start)
 {
     dump_bb_insn(func, bb, at_func_start);
-    for (int i = 0; i < MAX_BB_DOM_SUCC; i++) {
-        if (!bb->dom_next[i])
-            break;
-        dump_bb_insn_by_dom(func, bb->dom_next[i], at_func_start);
-    }
+    for (int i = 0; i < bb->dom_next.size; i++)
+        dump_bb_insn_by_dom(func, bb->dom_next.items[i], at_func_start);
 }
 
 void dump_insn(void)
